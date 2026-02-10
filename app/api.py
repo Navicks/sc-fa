@@ -62,6 +62,8 @@ async def generate_token(
         password=form_data.password,
         session=session,
     )
+    if user is None:
+        raise auth.create_unauthorized_exception("Bearer")
     access_token = auth.create_access_token(sub=user.email)
     return TokenResponse(access_token=access_token, token_type="bearer")
 
@@ -350,13 +352,11 @@ async def read_user_by_email(
     if current_user.email == email:
         return current_user
 
-    stmt = select(User).where(User.email == email)
-    try:
-        user = (await session.execute(stmt)).one()
-    except NoResultFound as e:
+    user = await auth.get_user_by_email(email, session)
+    if user is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
-        ) from e
+        )
     return user[0] if isinstance(user, Row) else user
 
 

@@ -14,33 +14,34 @@ from app.database import get_async_session
 from app.models.user import User
 from app.settings import auth_settings
 
-UNAUTHORIZED_BEARER_EXCEPTION = HTTPException(
-    status_code=status.HTTP_401_UNAUTHORIZED,
-    detail="Invalid credentials",
-    headers={"WWW-Authenticate": "Bearer"},
-)
-
-UNAUTHORIZED_BASIC_EXCEPTION = HTTPException(
-    status_code=status.HTTP_401_UNAUTHORIZED,
-    detail="Invalid credentials",
-    headers={"WWW-Authenticate": "Basic"},
-)
-
-
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token")
 http_basic = HTTPBasic()
 
 
-async def authenticate_user(email: str, password: str, session) -> User | None:
+def create_unauthorized_exception(scheme: str = "Bearer") -> HTTPException:
+    """Create a 401 Unauthorized exception for the given authentication scheme."""
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid credentials",
+        headers={"WWW-Authenticate": scheme},
+    )
+
+
+async def get_user_by_email(email: str, session) -> User | None:
+    """Get a user by email. Returns None if not found."""
     stmt = select(User).where(User.email == email)
     try:
-        user = (await session.execute(stmt)).one()
+        result = (await session.execute(stmt)).one()
+        return result[0] if isinstance(result, Row) else result
     except NoResultFound:
-        raise UNAUTHORIZED_BEARER_EXCEPTION
-    if isinstance(user, Row):
-        user = user[0]
-    if not user.verify_password(password):
-        raise UNAUTHORIZED_BEARER_EXCEPTION
+        return None
+
+
+async def authenticate_user(email: str, password: str, session) -> User | None:
+    """Authenticate a user by email and password. Returns None on failure."""
+    user = await get_user_by_email(email, session)
+    if user is None or not user.verify_password(password):
+        return None
     return user
 
 
@@ -59,39 +60,37 @@ def create_access_token(sub: str) -> str:
 
 async def get_current_user(
     token: Annotated[str, Depends(oauth2_scheme)], session=Depends(get_async_session)
-) -> User | None:
+) -> User:
+    """Get the current user from a Bearer token."""
+    unauthorized = create_unauthorized_exception("Bearer")
     try:
         payload = jwt.decode(
             token,
             auth_settings.secret_key,
             algorithms=[auth_settings.algorithm],
         )
-        email: str = payload.get("sub")
-        print(f"Decoded email: {email}")
+        email: str | None = payload.get("sub")
         if email is None:
-            raise UNAUTHORIZED_BEARER_EXCEPTION
+            raise unauthorized
     except jwt.PyJWTError:
-        raise UNAUTHORIZED_BEARER_EXCEPTION
-    stmt = select(User).where(User.email == email)
-    try:
-        user = (await session.execute(stmt)).one()
-    except NoResultFound:
-        raise UNAUTHORIZED_BEARER_EXCEPTION
-    return user[0] if isinstance(user, Row) else user
+        raise unauthorized
+
+    user = await get_user_by_email(email, session)
+    if user is None:
+        raise unauthorized
+    return user
 
 
 async def docs_authenticate(
     credentials: Annotated[HTTPBasicCredentials, Depends(http_basic)],
     session=Depends(get_async_session),
-) -> User | None:
-    try:
-        user = await authenticate_user(
-            credentials.username,
-            credentials.password,
-            session,
-        )
-    except HTTPException:
-        raise UNAUTHORIZED_BASIC_EXCEPTION
+) -> User:
+    """Authenticate a user via Basic auth (for API docs access)."""
+    user = await authenticate_user(
+        credentials.username,
+        credentials.password,
+        session,
+    )
     if user is None:
-        raise UNAUTHORIZED_BASIC_EXCEPTION
+        raise create_unauthorized_exception("Basic")
     return user
