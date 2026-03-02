@@ -30,11 +30,14 @@ def create_unauthorized_exception(scheme: str = "Bearer") -> HTTPException:
     )
 
 
-async def get_user_by_email(email: str, session, redis: AsyncRedis) -> User | None:
+async def get_user_by_email(
+    email: str, session, redis: AsyncRedis, ignore_cache: bool = False
+) -> User | None:
     """Get a user by email. Returns None if not found."""
-    cache = await cache_user.get(redis, email)
-    if cache:
-        return cache
+    if not ignore_cache:
+        cache = await cache_user.get(redis, email)
+        if cache:
+            return cache
 
     stmt = select(User).where(User.email == email)
     try:
@@ -50,7 +53,7 @@ async def authenticate_user(
     email: str, password: str, session, redis: AsyncRedis
 ) -> User | None:
     """Authenticate a user by email and password. Returns None on failure."""
-    user = await get_user_by_email(email, session, redis)
+    user = await get_user_by_email(email, session, redis, ignore_cache=True)
     if user is None or not user.verify_password(password) or user.disabled:
         return None
     return user

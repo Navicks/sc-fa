@@ -23,7 +23,7 @@ async def set(redis: AsyncRedis, user: User):
     """Set the Redis cache for a given User instance."""
     await redis.set(
         get_key(user.email),
-        user.model_dump_json(),
+        user.model_dump_json(exclude={"hashed_password"}),
         ex=_CACHE_MAX_TTL,
     )
 
