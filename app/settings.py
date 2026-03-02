@@ -15,4 +15,30 @@ class AuthSettings(BaseSettings):
     access_token_expire_minutes: int = 60
 
 
+class DatabaseSettings(BaseSettings):
+    model_config = SettingsConfigDict(
+        extra="ignore",
+        env_file=SETTINGS_FILE,
+        env_file_encoding="utf-8",
+    )
+
+    database_url: str
+    database_echo: bool = True
+
+
+class RedisSettings(BaseSettings):
+    model_config = SettingsConfigDict(
+        extra="ignore",
+        env_file=SETTINGS_FILE,
+        env_file_encoding="utf-8",
+    )
+
+    redis_host: str
+    redis_port: int = 6379
+    redis_db: int = 0
+    redis_password: str | None = None
+
+
 auth_settings = AuthSettings()
+database_settings = DatabaseSettings()
+redis_settings = RedisSettings()

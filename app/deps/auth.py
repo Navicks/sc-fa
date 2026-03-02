@@ -5,12 +5,15 @@ import jwt
 from fastapi import Depends
 from fastapi.exceptions import HTTPException
 from fastapi.security import HTTPBasic, HTTPBasicCredentials, OAuth2PasswordBearer
+from redis.asyncio import Redis as AsyncRedis
 from sqlalchemy.engine.row import Row
 from sqlalchemy.exc import NoResultFound
 from sqlmodel import select
 from starlette import status
 
+import app.cache.user as cache_user
 from app.database import get_async_session
+from app.database.redis import create_redis_client
 from app.models.user import User
 from app.settings import auth_settings
 
@@ -27,20 +30,28 @@ def create_unauthorized_exception(scheme: str = "Bearer") -> HTTPException:
     )
 
 
-async def get_user_by_email(email: str, session) -> User | None:
+async def get_user_by_email(email: str, session, redis: AsyncRedis) -> User | None:
     """Get a user by email. Returns None if not found."""
+    cache = await cache_user.get(redis, email)
+    if cache:
+        return cache
+
     stmt = select(User).where(User.email == email)
     try:
         result = (await session.execute(stmt)).one()
-        return result[0] if isinstance(result, Row) else result
+        user = result[0] if isinstance(result, Row) else result
     except NoResultFound:
         return None
+    await cache_user.set(redis, user)
+    return user
 
 
-async def authenticate_user(email: str, password: str, session) -> User | None:
+async def authenticate_user(
+    email: str, password: str, session, redis: AsyncRedis
+) -> User | None:
     """Authenticate a user by email and password. Returns None on failure."""
-    user = await get_user_by_email(email, session)
-    if user is None or not user.verify_password(password):
+    user = await get_user_by_email(email, session, redis)
+    if user is None or not user.verify_password(password) or user.disabled:
         return None
     return user
 
@@ -59,7 +70,9 @@ def create_access_token(sub: str) -> str:
 
 
 async def get_current_user(
-    token: Annotated[str, Depends(oauth2_scheme)], session=Depends(get_async_session)
+    token: Annotated[str, Depends(oauth2_scheme)],
+    redis: Annotated[AsyncRedis, Depends(create_redis_client)],
+    session=Depends(get_async_session),
 ) -> User:
     """Get the current user from a Bearer token."""
     unauthorized = create_unauthorized_exception("Bearer")
@@ -75,7 +88,7 @@ async def get_current_user(
     except jwt.PyJWTError:
         raise unauthorized
 
-    user = await get_user_by_email(email, session)
+    user = await get_user_by_email(email, session, redis)
     if user is None:
         raise unauthorized
     return user
@@ -83,6 +96,7 @@ async def get_current_user(
 
 async def docs_authenticate(
     credentials: Annotated[HTTPBasicCredentials, Depends(http_basic)],
+    redis: Annotated[AsyncRedis, Depends(create_redis_client)],
     session=Depends(get_async_session),
 ) -> User:
     """Authenticate a user via Basic auth (for API docs access)."""
@@ -90,6 +104,7 @@ async def docs_authenticate(
         credentials.username,
         credentials.password,
         session,
+        redis,
     )
     if user is None:
         raise create_unauthorized_exception("Basic")

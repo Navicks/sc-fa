@@ -1,10 +1,16 @@
-from fastapi import Depends, FastAPI, Header, Request
+import datetime
+from typing import Annotated
+
+from fastapi import BackgroundTasks, Depends, FastAPI, Request
 from fastapi.exceptions import HTTPException
+from fastapi.responses import RedirectResponse
 from redis.asyncio import Redis as AsyncRedis
 from sqlalchemy.engine.row import Row
 from sqlalchemy.exc import NoResultFound
-from sqlmodel import select
+from sqlmodel import or_, select
+from starlette import status
 
+from app.cache import token as cache_token
 from app.database import get_async_session
 from app.database.redis import create_redis_client
 from app.models.site import Site
@@ -18,40 +24,50 @@ app = FastAPI()
     status_code=302,
     summary="Redirect Token",
     description="Redirect based on the provided token",
-    responses={404: {"description": "Token not found"}},
+    response_class=RedirectResponse,
+    responses={status.HTTP_404_NOT_FOUND: {"description": "Token not found"}},
 )
 async def token(
     token: str,
     request: Request,
-    host: str | None = Header(default=None),
+    background_tasks: BackgroundTasks,
+    redis: Annotated[AsyncRedis, Depends(create_redis_client)],
     session=Depends(get_async_session),
-    redis: AsyncRedis = Depends(create_redis_client),
-):
+) -> RedirectResponse:
     host = request.url.hostname
     if host is None:
-        raise HTTPException(status_code=404, detail="Site not found")
-
-    cache = await redis.get(f"token:{host}:{token}")
-    if cache:
-        status_code, redirect_uri = cache.split("|", 1)
         raise HTTPException(
-            status_code=int(status_code),
-            headers={"Location": redirect_uri},
+            status_code=status.HTTP_404_NOT_FOUND, detail="Site not found"
         )
 
-    stmt = select(Token).join(Site).where(Token.token == token, Site.fqdn == host)
+    cache = await cache_token.get(redis, host, token)
+    if cache:
+        return RedirectResponse(
+            status_code=cache[0],
+            url=cache[1],
+        )
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+    stmt = (
+        select(Token)
+        .join(Token.site)
+        .where(
+            Token.token == token,
+            Site.fqdn == host,
+            or_(Token.valid_from.is_(None), Token.valid_from <= now),
+            or_(Token.valid_to.is_(None), now < Token.valid_to),
+        )
+    )
     try:
         site_token = (await session.execute(stmt)).one()
     except NoResultFound as e:
-        raise HTTPException(status_code=404, detail="Token not found") from e
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Token not found"
+        ) from e
 
     site_token = site_token[0] if isinstance(site_token, Row) else site_token
-    await redis.set(
-        f"token:{host}:{token}",
-        f"{site_token.status_code}|{site_token.redirect_uri}",
-        ex=300,
-    )
-    raise HTTPException(
+    background_tasks.add_task(cache_token.set, redis, site_token, now, site=host)
+    return RedirectResponse(
         status_code=site_token.status_code,
-        headers={"Location": site_token.redirect_uri},
+        url=site_token.redirect_uri,
     )

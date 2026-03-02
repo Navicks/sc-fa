@@ -1,15 +1,18 @@
 from typing import Annotated
 
 from fastapi import Depends, FastAPI
-from fastapi.exceptions import HTTPException
+from fastapi.exceptions import HTTPException, RequestValidationError
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.responses import HTMLResponse
 from fastapi.security import OAuth2PasswordRequestForm
+from redis.asyncio import Redis as AsyncRedis
 from sqlalchemy.engine.row import Row
 from sqlalchemy.exc import NoResultFound
 from sqlmodel import SQLModel, select
 from starlette import status
 
+from app.cache import token as cache_token
+from app.cache import user as cache_user
 from app.database import get_async_session
 from app.deps import auth
 from app.models.site import Site, SiteCreate, SiteRead, SiteUpdate
@@ -55,12 +58,14 @@ class TokenResponse(SQLModel):
 )
 async def generate_token(
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
+    redis: Annotated[AsyncRedis, Depends(auth.create_redis_client)],
     session=Depends(get_async_session),
 ) -> TokenResponse:
     user = await auth.authenticate_user(
         email=form_data.username,
         password=form_data.password,
         session=session,
+        redis=redis,
     )
     if user is None:
         raise auth.create_unauthorized_exception("Bearer")
@@ -150,9 +155,7 @@ async def update_site(
     site = await read_site_by_id(site_id, current_user, session)
 
     for key, value in update.model_dump(exclude_unset=True).items():
-        print(f"{key} = '{value}'")
         setattr(site, key, value)
-
     await session.commit()
     await session.refresh(site)
     return site
@@ -187,7 +190,7 @@ async def create_token(
     status_code=status.HTTP_200_OK,
     summary="Get Token by Token String",
     description="Get a token by its token string for a specific site",
-    responses={status.HTTP_404_NOT_FOUND: {"description": "Token not found"}},
+    responses={status.HTTP_404_NOT_FOUND: {"description": "Site or token not found"}},
 )
 async def read_token_by_token(
     site_id: int,
@@ -195,14 +198,12 @@ async def read_token_by_token(
     current_user: Annotated[User, Depends(auth.get_current_user)],
     session=Depends(get_async_session),
 ) -> Token:
-    await read_site_by_id(site_id, current_user, session)
-
     stmt = select(Token).where(Token.token == token, Token.site_id == site_id)
     try:
         token = (await session.execute(stmt)).one()
     except NoResultFound as e:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Token not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Site or token not found"
         ) from e
     return token[0] if isinstance(token, Row) else token
 
@@ -213,7 +214,7 @@ async def read_token_by_token(
     status_code=status.HTTP_200_OK,
     summary="Get Token by ID",
     description="Get a token by its ID for a specific site",
-    responses={status.HTTP_404_NOT_FOUND: {"description": "Token not found"}},
+    responses={status.HTTP_404_NOT_FOUND: {"description": "Site or token not found"}},
 )
 async def read_token_by_id(
     site_id: int,
@@ -221,14 +222,12 @@ async def read_token_by_id(
     current_user: Annotated[User, Depends(auth.get_current_user)],
     session=Depends(get_async_session),
 ) -> Token:
-    await read_site_by_id(site_id, current_user, session)
-
     stmt = select(Token).where(Token.id == token_id, Token.site_id == site_id)
     try:
         token = (await session.execute(stmt)).one()
     except NoResultFound as e:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Token not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Site or token not found"
         ) from e
     return token[0] if isinstance(token, Row) else token
 
@@ -239,13 +238,14 @@ async def read_token_by_id(
     status_code=status.HTTP_200_OK,
     summary="Update Token",
     description="Update an existing token for a specific site",
-    responses={status.HTTP_404_NOT_FOUND: {"description": "Token not found"}},
+    responses={status.HTTP_404_NOT_FOUND: {"description": "Site or token not found"}},
 )
 async def update_token(
     site_id: int,
     token_id: int,
     update: TokenUpdate,
     current_user: Annotated[User, Depends(auth.get_current_user)],
+    redis: Annotated[AsyncRedis, Depends(auth.create_redis_client)],
     session=Depends(get_async_session),
 ) -> Token:
     token = await read_token_by_id(site_id, token_id, current_user, session)
@@ -253,8 +253,35 @@ async def update_token(
     for key, value in update.model_dump(exclude_unset=True).items():
         setattr(token, key, value)
 
+    if token.valid_from and token.valid_to and token.valid_from >= token.valid_to:
+        raise RequestValidationError(
+            [
+                {
+                    "type": "value_error",
+                    "loc": (
+                        "valid_from" if update.valid_from is not None else "valid_to",
+                    ),
+                    "msg": "Value error, valid_from must be before valid_to",
+                    "input": (
+                        {"valid_from": update.valid_from}
+                        if update.valid_from is not None
+                        else {"valid_to": update.valid_to}
+                    ),
+                    "ctx": {
+                        "error": None,
+                        **(
+                            {"valid_to": token.valid_to}
+                            if update.valid_from is not None
+                            else {"valid_from": token.valid_from}
+                        ),
+                    },
+                },
+            ]
+        )
+
+    await session.refresh(token, attribute_names=["site"])
+    await cache_token.delete(redis, token)
     await session.commit()
-    await session.refresh(token)
     return token
 
 
@@ -263,15 +290,18 @@ async def update_token(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete Token",
     description="Delete an existing token for a specific site",
-    responses={status.HTTP_404_NOT_FOUND: {"description": "Token not found"}},
+    responses={status.HTTP_404_NOT_FOUND: {"description": "Site or token not found"}},
 )
 async def delete_token(
     site_id: int,
     token_id: int,
     current_user: Annotated[User, Depends(auth.get_current_user)],
+    redis: Annotated[AsyncRedis, Depends(auth.create_redis_client)],
     session=Depends(get_async_session),
 ) -> None:
     token = await read_token_by_id(site_id, token_id, current_user, session)
+    await session.refresh(token, attribute_names=["site"])
+    await cache_token.delete(redis, token)
     await session.delete(token)
     await session.commit()
     return None
@@ -347,12 +377,13 @@ async def read_user_by_id(
 async def read_user_by_email(
     email: str,
     current_user: Annotated[User, Depends(auth.get_current_user)],
+    redis: Annotated[AsyncRedis, Depends(auth.create_redis_client)],
     session=Depends(get_async_session),
 ) -> User:
     if current_user.email == email:
         return current_user
 
-    user = await auth.get_user_by_email(email, session)
+    user = await auth.get_user_by_email(email, session, redis)
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
@@ -370,6 +401,7 @@ async def read_user_by_email(
 async def update_current_user(
     update: UserUpdate,
     current_user: Annotated[User, Depends(auth.get_current_user)],
+    redis: Annotated[AsyncRedis, Depends(auth.create_redis_client)],
     session=Depends(get_async_session),
 ) -> User:
     user = current_user
@@ -380,6 +412,7 @@ async def update_current_user(
         else:
             setattr(user, key, value)
 
+    await cache_user.delete(redis, user)
     await session.commit()
     await session.refresh(user)
     return user
@@ -397,6 +430,7 @@ async def update_user(
     user_id: int,
     update: UserUpdate,
     current_user: Annotated[User, Depends(auth.get_current_user)],
+    redis: Annotated[AsyncRedis, Depends(auth.create_redis_client)],
     session=Depends(get_async_session),
 ) -> User:
     user = await read_user_by_id(user_id, current_user, session)
@@ -407,6 +441,7 @@ async def update_user(
         else:
             setattr(user, key, value)
 
+    await cache_user.delete(redis, user)
     await session.commit()
     await session.refresh(user)
     return user
@@ -425,6 +460,7 @@ async def update_user(
 async def delete_user(
     user_id: int,
     current_user: Annotated[User, Depends(auth.get_current_user)],
+    redis: Annotated[AsyncRedis, Depends(auth.create_redis_client)],
     session=Depends(get_async_session),
 ) -> None:
     if current_user.id == user_id:
@@ -434,6 +470,7 @@ async def delete_user(
         )
 
     user = await read_user_by_id(user_id, current_user, session)
+    await cache_user.delete(redis, user)
     await session.delete(user)
     await session.commit()
     return None

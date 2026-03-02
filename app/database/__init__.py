@@ -1,12 +1,12 @@
 from sqlalchemy.ext.asyncio import AsyncEngine
-from sqlalchemy.ext.asyncio import \
-    create_async_engine as sa_create_async_engine
+from sqlalchemy.ext.asyncio import create_async_engine as sa_create_async_engine
 from sqlmodel.ext.asyncio.session import AsyncSession
+
+from app.settings import database_settings
 
 
 def create_async_engine() -> AsyncEngine:
-    database_url = "sqlite+aiosqlite:///./fa.db"
-    return sa_create_async_engine(database_url, echo=True)
+    return sa_create_async_engine(database_settings.database_url, echo=True)
 
 
 _engine_async = create_async_engine()
