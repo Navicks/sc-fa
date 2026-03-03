@@ -3,9 +3,9 @@ from datetime import datetime, timezone
 from enum import IntEnum
 
 import starlette.status as status
-from pydantic import field_validator, model_validator
+from pydantic import HttpUrl, field_validator, model_validator
 from sqlalchemy import DateTime, TypeDecorator, UniqueConstraint
-from sqlmodel import Field, Relationship, SQLModel
+from sqlmodel import VARCHAR, Field, Relationship, SQLModel
 
 from app.models.base import CreateBase, ReadBase, TableBase, UpdateBase
 from app.models.site import Site
@@ -31,7 +31,7 @@ class TokenStatus(IntEnum):
 
 
 class TokenBase(SQLModel, ABC):
-    redirect_uri: str | None = Field(default=None, max_length=2048)
+    redirect_uri: HttpUrl | None = Field(default=None, max_length=2048, sa_type=VARCHAR)
     subject: str | None = Field(default=None, max_length=255)
     status_code: TokenStatus = Field(default=TokenStatus.FOUND)
     valid_from: datetime | None = Field(default=None, sa_type=UtcDateTime)
@@ -74,7 +74,7 @@ class TokenRead(TokenBase, ReadBase):
 
 
 class TokenUpdate(TokenBase, UpdateBase):
-    redirect_uri: str | None = None
+    redirect_uri: HttpUrl | None = None
     subject: str | None = None
     status_code: TokenStatus | None = None
     valid_from: datetime | None = None

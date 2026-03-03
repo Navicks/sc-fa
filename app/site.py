@@ -21,7 +21,7 @@ app = FastAPI()
 
 @app.get(
     "/{token}",
-    status_code=302,
+    status_code=status.HTTP_302_FOUND,
     summary="Redirect Token",
     description="Redirect based on the provided token",
     response_class=RedirectResponse,

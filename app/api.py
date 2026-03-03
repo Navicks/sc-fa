@@ -21,7 +21,7 @@ from app.models.user import User, UserCreate, UserRead, UserUpdate
 
 app = FastAPI(
     title="fa API",
-    version="0.1.0",
+    version="0.1.1",
     description="fa API endpoints",
     docs_url=None,
     redoc_url=None,
@@ -313,12 +313,23 @@ async def delete_token(
     status_code=status.HTTP_201_CREATED,
     summary="Create User",
     description="Create a new user",
+    responses={
+        status.HTTP_403_FORBIDDEN: {
+            "description": "Only admin users can create new users"
+        }
+    },
 )
 async def create_user(
     create: UserCreate,
-    _: Annotated[User, Depends(auth.get_current_user)],
+    current_user: Annotated[User, Depends(auth.get_current_user)],
     session=Depends(get_async_session),
 ) -> User:
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admin users can create new users",
+        )
+
     new_user = User.model_validate(create.model_dump() | {"hashed_password": ""})
     new_user.set_password(create.password)
     session.add(new_user)
@@ -346,7 +357,12 @@ async def read_current_user(
     status_code=status.HTTP_200_OK,
     summary="Get User by ID",
     description="Get a user by their ID",
-    responses={status.HTTP_404_NOT_FOUND: {"description": "User not found"}},
+    responses={
+        status.HTTP_403_FORBIDDEN: {
+            "description": "Only admin users can access other users' information"
+        },
+        status.HTTP_404_NOT_FOUND: {"description": "User not found"},
+    },
 )
 async def read_user_by_id(
     user_id: int,
@@ -355,6 +371,12 @@ async def read_user_by_id(
 ) -> User:
     if current_user.id == user_id:
         return current_user
+
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admin users can access other users' information",
+        )
 
     stmt = select(User).where(User.id == user_id)
     try:
@@ -372,7 +394,12 @@ async def read_user_by_id(
     status_code=status.HTTP_200_OK,
     summary="Get User by Email",
     description="Get a user by their email",
-    responses={status.HTTP_404_NOT_FOUND: {"description": "User not found"}},
+    responses={
+        status.HTTP_403_FORBIDDEN: {
+            "description": "Only admin users can access other users' information"
+        },
+        status.HTTP_404_NOT_FOUND: {"description": "User not found"},
+    },
 )
 async def read_user_by_email(
     email: str,
@@ -382,6 +409,12 @@ async def read_user_by_email(
 ) -> User:
     if current_user.email == email:
         return current_user
+
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admin users can access other users' information",
+        )
 
     user = await auth.get_user_by_email(email, session, redis)
     if user is None:
@@ -424,7 +457,12 @@ async def update_current_user(
     status_code=status.HTTP_200_OK,
     summary="Update User",
     description="Update an existing user",
-    responses={status.HTTP_404_NOT_FOUND: {"description": "User not found"}},
+    responses={
+        status.HTTP_403_FORBIDDEN: {
+            "description": "Only admin users can access other users' information"
+        },
+        status.HTTP_404_NOT_FOUND: {"description": "User not found"},
+    },
 )
 async def update_user(
     user_id: int,
@@ -433,8 +471,13 @@ async def update_user(
     redis: Annotated[AsyncRedis, Depends(auth.create_redis_client)],
     session=Depends(get_async_session),
 ) -> User:
-    user = await read_user_by_id(user_id, current_user, session)
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admin users can access other users' information",
+        )
 
+    user = await read_user_by_id(user_id, current_user, session)
     for key, value in update.model_dump(exclude_unset=True).items():
         if key == "password":
             user.set_password(value)
@@ -454,6 +497,9 @@ async def update_user(
     description="Delete an existing user",
     responses={
         status.HTTP_400_BAD_REQUEST: {"description": "Users cannot delete themselves"},
+        status.HTTP_403_FORBIDDEN: {
+            "description": "Only admin users can delete other users"
+        },
         status.HTTP_404_NOT_FOUND: {"description": "User not found"},
     },
 )
@@ -467,6 +513,12 @@ async def delete_user(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Users cannot delete themselves",
+        )
+
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admin users can delete other users",
         )
 
     user = await read_user_by_id(user_id, current_user, session)

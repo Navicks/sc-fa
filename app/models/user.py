@@ -18,6 +18,7 @@ class UserBase(SQLModel, ABC):
     email: EmailStr = Field(index=True, unique=True, max_length=255)
     display_name: str = Field(max_length=255)
     disabled: bool = Field(default=False)
+    is_admin: bool = Field(default=False, sa_column_kwargs={"server_default": "0"})
 
 
 class User(UserBase, TableBase, table=True):
@@ -43,3 +44,4 @@ class UserUpdate(UserBase, UpdateBase):
     email: EmailStr | None = None
     display_name: str | None = None
     password: str | None = None
+    is_admin: bool | None = None
