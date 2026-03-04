@@ -22,7 +22,9 @@ class DatabaseSettings(BaseSettings):
         env_file_encoding="utf-8",
     )
 
-    database_url: str
+    database_async_schema: str
+    database_sync_schema: str
+    database_url_suffix: str
     database_echo: bool = True
 
 

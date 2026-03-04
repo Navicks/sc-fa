@@ -6,7 +6,11 @@ from app.settings import database_settings
 
 
 def create_async_engine() -> AsyncEngine:
-    return sa_create_async_engine(database_settings.database_url, echo=True)
+    return sa_create_async_engine(
+        f"{database_settings.database_async_schema}://"
+        f"{database_settings.database_url_suffix}",
+        echo=True,
+    )
 
 
 _engine_async = create_async_engine()

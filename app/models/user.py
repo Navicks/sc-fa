@@ -22,6 +22,7 @@ class UserBase(SQLModel, ABC):
 
 
 class User(UserBase, TableBase, table=True):
+    __tablename__ = "sc_user"
     hashed_password: str
 
     def set_password(self, password: str | None) -> None:

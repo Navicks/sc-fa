@@ -8,10 +8,18 @@ from app.models.site import Site
 from app.models.token import Token
 from app.models.user import User
 from app.models.user_site import UserSite
+from app.settings import database_settings
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
+
+# Override sqlalchemy.url from .env file
+config.set_main_option(
+    "sqlalchemy.url",
+    f"{database_settings.database_sync_schema}://"
+    f"{database_settings.database_url_suffix}",
+)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
@@ -68,9 +76,7 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection, target_metadata=target_metadata
-        )
+        context.configure(connection=connection, target_metadata=target_metadata)
 
         with context.begin_transaction():
             context.run_migrations()

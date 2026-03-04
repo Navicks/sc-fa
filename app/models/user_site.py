@@ -18,7 +18,7 @@ class UserSiteBase(SQLModel, ABC):
 
 
 class UserSiteUserBase(SQLModel, ABC):
-    user_id: int = Field(foreign_key="user.id", primary_key=True)
+    user_id: int = Field(foreign_key="sc_user.id", primary_key=True)
 
 
 class UserSite(UserSiteBase, UserSiteUserBase, table=True):

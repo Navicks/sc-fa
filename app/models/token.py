@@ -39,6 +39,11 @@ class TokenBase(SQLModel, ABC):
 
     __table_args__ = (UniqueConstraint("site_id", "token", name="uix_site_id_token"),)
 
+    @field_validator("redirect_uri", mode="after")
+    @classmethod
+    def convert_url_to_str(cls, v: HttpUrl | None) -> str | None:
+        return v if v is None else str(v)
+
     @field_validator("valid_from", "valid_to", mode="before")
     @classmethod
     def ensure_utc(cls, v: datetime | None) -> datetime | None:
