@@ -7,6 +7,7 @@ from sqlmodel import SQLModel
 from app.models.site import Site
 from app.models.token import Token
 from app.models.user import User
+from app.models.user_site import UserSite
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

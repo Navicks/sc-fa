@@ -6,15 +6,16 @@ from fastapi import Depends
 from fastapi.exceptions import HTTPException
 from fastapi.security import HTTPBasic, HTTPBasicCredentials, OAuth2PasswordBearer
 from redis.asyncio import Redis as AsyncRedis
-from sqlalchemy.engine.row import Row
 from sqlalchemy.exc import NoResultFound
 from sqlmodel import select
 from starlette import status
 
 import app.cache.user as cache_user
+import app.cache.user_site as cache_user_site
 from app.database import get_async_session
 from app.database.redis import create_redis_client
 from app.models.user import User
+from app.models.user_site import UserSite
 from app.settings import auth_settings
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token")
@@ -41,8 +42,7 @@ async def get_user_by_email(
 
     stmt = select(User).where(User.email == email)
     try:
-        result = (await session.execute(stmt)).one()
-        user = result[0] if isinstance(result, Row) else result
+        user = (await session.execute(stmt)).scalars().one()
     except NoResultFound:
         return None
     await cache_user.set(redis, user)
@@ -112,3 +112,19 @@ async def docs_authenticate(
     if user is None:
         raise create_unauthorized_exception("Basic")
     return user
+
+
+async def get_current_user_site(
+    current_user: Annotated[User, Depends(get_current_user)],
+    redis: Annotated[AsyncRedis, Depends(create_redis_client)],
+    session=Depends(get_async_session),
+) -> dict[int, UserSite] | None:
+    """Get the current user's site association, if any."""
+    cache = await cache_user_site.get(redis, current_user.email)
+    if cache:
+        return cache
+
+    stmt = select(UserSite).where(UserSite.user_id == current_user.id)
+    rows = (await session.execute(stmt)).scalars().all()
+    print(type(rows))
+    return await cache_user_site.set(redis, current_user, rows)
