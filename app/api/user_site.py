@@ -7,7 +7,7 @@ from sqlalchemy.exc import IntegrityError, NoResultFound
 from sqlmodel import select
 from starlette import status
 
-from app.api import user
+from app.api import user as api_user
 from app.cache import user_site as cache_user_site
 from app.database import get_async_session
 from app.database.redis import create_redis_client
@@ -53,7 +53,7 @@ async def assign_site_to_user(
             detail="Only admin users can assign sites to users",
         )
 
-    target_user = await user.read_user_by_id(user_id, current_user, session)
+    target_user = await api_user.read_user_by_id(user_id, current_user, session)
 
     try:
         user_site = UserSite.model_validate(create.model_dump() | {"user_id": user_id})
@@ -108,7 +108,7 @@ async def get_sites_for_user(
     o: int = Query(default=0, ge=0),
     session=Depends(get_async_session),
 ) -> list[UserSite]:
-    await user.read_user_by_id(user_id, current_user, session)
+    await api_user.read_user_by_id(user_id, current_user, session)
 
     if not current_user.is_admin and current_user.id != user_id:
         raise HTTPException(
@@ -146,7 +146,7 @@ async def update_user_site_permission(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admin users can update user-site permissions",
         )
-    target_user = await user.read_user_by_id(user_id, current_user, session)
+    target_user = await api_user.read_user_by_id(user_id, current_user, session)
 
     stmt = select(UserSite).where(
         UserSite.user_id == user_id, UserSite.site_id == site_id

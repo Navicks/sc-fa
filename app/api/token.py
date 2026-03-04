@@ -7,7 +7,7 @@ from sqlalchemy.exc import NoResultFound
 from sqlmodel import select
 from starlette import status
 
-from app.api import site
+from app.api import site as api_site
 from app.cache import token as cache_token
 from app.database import get_async_session
 from app.database.redis import create_redis_client
@@ -39,7 +39,7 @@ async def create_token(
     ],
     session=Depends(get_async_session),
 ) -> Token:
-    await site.read_site_by_id(site_id, current_user, user_sites, session)
+    await api_site.read_site_by_id(site_id, current_user, user_sites, session)
     if not current_user.is_admin and user_sites[site_id] <= SitePermission.WRITE:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions"

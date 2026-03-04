@@ -2,12 +2,14 @@ from fastapi import Depends, FastAPI
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.responses import HTMLResponse
 
-from app.api import auth, site, token, user, user_site
+from app.api import auth as api_auth
+from app.api import site, token, user, user_site
+from app.deps import auth
 from app.models.user import User
 
 app = FastAPI(
     title="fa API",
-    version="0.1.1",
+    version="0.1.2",
     description="fa API endpoints",
     docs_url=None,
     redoc_url=None,
@@ -31,7 +33,7 @@ async def read_root():
     return {"message": "Hello"}
 
 
-app.include_router(auth.router)
+app.include_router(api_auth.router)
 app.include_router(site.router)
 app.include_router(token.router)
 app.include_router(user.router)
