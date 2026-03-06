@@ -90,11 +90,6 @@ async def read_site_by_fqdn(
     ],
     session=Depends(get_async_session),
 ) -> Site:
-    if not current_user.is_admin and fqdn not in (user_sites or {}):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Site not found"
-        )
-
     stmt = select(Site).where(Site.fqdn == fqdn)
     try:
         site = (await session.execute(stmt)).scalars().one()
@@ -102,6 +97,11 @@ async def read_site_by_fqdn(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Site not found"
         ) from e
+
+    if not current_user.is_admin and site.id not in (user_sites or {}):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Site not found"
+        )
     return site
 
 
@@ -123,7 +123,7 @@ async def update_site(
     session=Depends(get_async_session),
 ) -> Site:
     site = await read_site_by_id(site_id, current_user, user_sites, session)
-    if not current_user.is_admin and user_sites[site_id] <= SitePermission.WRITE:
+    if not current_user.is_admin and user_sites[site_id] < SitePermission.ADMIN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions"
         )

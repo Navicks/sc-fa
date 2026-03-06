@@ -1003,7 +1003,7 @@ wheels = [
 [[package]]
 name = "sc-fa"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "aiosqlite" },
     { name = "alembic" },
@@ -1015,6 +1015,7 @@ dependencies = [
     { name = "pyjwt", extra = ["crypto"] },
     { name = "redis" },
     { name = "sqlmodel" },
+    { name = "typer" },
 ]
 
 [package.metadata]
@@ -1029,6 +1030,7 @@ requires-dist = [
     { name = "pyjwt", extras = ["crypto"], specifier = ">=2.11.0" },
     { name = "redis", specifier = ">=7.1.0" },
     { name = "sqlmodel", specifier = ">=0.0.31" },
+    { name = "typer", specifier = ">=0.21.1" },
 ]
 
 [[package]]

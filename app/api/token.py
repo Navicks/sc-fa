@@ -163,6 +163,10 @@ async def update_token(
     session=Depends(get_async_session),
 ) -> Token:
     token = await read_token_by_id(site_id, token_id, current_user, user_sites, session)
+    if not current_user.is_admin and user_sites[site_id] < SitePermission.WRITE:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions"
+        )
 
     for key, value in update.model_dump(exclude_unset=True).items():
         setattr(token, key, value)
