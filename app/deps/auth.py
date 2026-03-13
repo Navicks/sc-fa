@@ -42,7 +42,7 @@ async def get_user_by_email(
 
     stmt = select(User).where(User.email == email)
     try:
-        user = (await session.execute(stmt)).scalars().one()
+        user = (await session.exec(stmt)).one()
     except NoResultFound:
         return None
     await cache_user.set(redis, user)
@@ -125,6 +125,5 @@ async def get_current_user_site(
         return cache
 
     stmt = select(UserSite).where(UserSite.user_id == current_user.id)
-    rows = (await session.execute(stmt)).scalars().all()
-    print(type(rows))
+    rows = (await session.exec(stmt)).all()
     return await cache_user_site.set(redis, current_user, rows)

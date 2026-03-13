@@ -75,7 +75,7 @@ async def read_tokens_for_site(
         )
 
     stmt = select(Token).where(Token.site_id == site_id).limit(l).offset(o)
-    tokens = (await session.execute(stmt)).scalars().all()
+    tokens = (await session.exec(stmt)).all()
     return tokens
 
 
@@ -103,7 +103,7 @@ async def read_token_by_token(
 
     stmt = select(Token).where(Token.token == token, Token.site_id == site_id)
     try:
-        token = (await session.execute(stmt)).scalars().one()
+        token = (await session.exec(stmt)).one()
     except NoResultFound as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Site or token not found"
@@ -135,7 +135,7 @@ async def read_token_by_id(
 
     stmt = select(Token).where(Token.id == token_id, Token.site_id == site_id)
     try:
-        token = (await session.execute(stmt)).scalars().one()
+        token = (await session.exec(stmt)).one()
     except NoResultFound as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Site or token not found"

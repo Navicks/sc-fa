@@ -92,7 +92,7 @@ async def read_user_by_id(
 
     stmt = select(User).where(User.id == user_id)
     try:
-        user = (await session.execute(stmt)).scalars().one()
+        user = (await session.exec(stmt)).one()
     except NoResultFound as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="User not found"

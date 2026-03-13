@@ -85,7 +85,7 @@ async def get_sites_for_current_user(
     stmt = (
         select(UserSite).where(UserSite.user_id == current_user.id).limit(l).offset(o)
     )
-    rows = (await session.execute(stmt)).scalars().all()
+    rows = (await session.exec(stmt)).all()
     return rows
 
 
@@ -117,7 +117,7 @@ async def get_sites_for_user(
         )
 
     stmt = select(UserSite).where(UserSite.user_id == user_id).limit(l).offset(o)
-    rows = (await session.execute(stmt)).scalars().all()
+    rows = (await session.exec(stmt)).all()
     return rows
 
 
@@ -152,7 +152,7 @@ async def update_user_site_permission(
         UserSite.user_id == user_id, UserSite.site_id == site_id
     )
     try:
-        user_site = (await session.execute(stmt)).scalars().one()
+        user_site = (await session.exec(stmt)).one()
     except NoResultFound as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="User or site not found"

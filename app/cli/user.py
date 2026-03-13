@@ -5,16 +5,18 @@ from typing import Annotated
 import typer
 from rich.console import Console
 from sqlalchemy.exc import IntegrityError
+from sqlmodel import select
 
 from app.database import create_sync_engine, generate_sync_session
+from app.functions import export_model, import_model
 from app.models.user import User
 
-console = Console()
 app = typer.Typer()
+console_err = Console(stderr=True)
 
 
-@app.command(name="create-user", help="Create a new user")
-def create_user(
+@app.command(name="create", help="Create a new user")
+def create(
     email: str,
     password: Annotated[
         str, typer.Option(prompt=True, hide_input=True, confirmation_prompt=True)
@@ -35,7 +37,9 @@ def create_user(
             session.add(user)
             session.commit()
         except IntegrityError:
-            console.print("[bold red]A user with this email already exists.[/bold red]")
+            console_err.print(
+                "[bold red]A user with this email already exists.[/bold red]"
+            )
             raise typer.Exit(code=1)
 
 
@@ -56,9 +60,9 @@ def change_password(
 ) -> None:
 
     with generate_sync_session(create_sync_engine()) as session:
-        user = session.query(User).filter_by(email=email).first()
+        user = session.exec(select(User).where(User.email == email)).first()
         if not user:
-            console.print("[bold red]No user found with this email.[/bold red]")
+            console_err.print("[bold red]No user found with this email.[/bold red]")
             raise typer.Exit(code=1)
 
         if password is None:
@@ -70,11 +74,11 @@ def change_password(
 
         user.set_password(password)
         session.commit()
-        console.print("[bold green]Password updated successfully.[/bold green]")
+        console_err.print("[bold green]Password updated successfully.[/bold green]")
 
 
-@app.command(name="update-user", help="Update an existing user")
-def update_user(
+@app.command(name="update", help="Update an existing user")
+def update(
     email: str,
     display_name: Annotated[
         str | None,
@@ -105,9 +109,9 @@ def update_user(
 ) -> None:
 
     with generate_sync_session(create_sync_engine()) as session:
-        user = session.query(User).filter_by(email=email).first()
+        user = session.exec(select(User).where(User.email == email)).first()
         if not user:
-            console.print("[bold red]No user found with this email.[/bold red]")
+            console_err.print("[bold red]No user found with this email.[/bold red]")
             raise typer.Exit(code=1)
 
         if display_name is not None:
@@ -117,8 +121,49 @@ def update_user(
         if disabled is not None:
             user.disabled = disabled
         session.commit()
-        console.print("[bold green]User updated successfully.[/bold green]")
+        console_err.print("[bold green]User updated successfully.[/bold green]")
 
 
-if __name__ == "__main__":
-    app()
+@app.command(name="delete", help="Delete a user")
+def delete(email: str) -> None:
+
+    with generate_sync_session(create_sync_engine()) as session:
+        user = session.exec(select(User).where(User.email == email)).first()
+        if not user:
+            console_err.print("[bold red]No user found with this email.[/bold red]")
+            raise typer.Exit(code=1)
+        if user.is_admin:
+            console_err.print("[bold red]Cannot delete an admin user.[/bold red]")
+            raise typer.Exit(code=1)
+
+        session.delete(user)
+        session.commit()
+        console_err.print("[bold green]User deleted successfully.[/bold green]")
+
+
+@app.command(name="export", help="Export all users to a file")
+def export(
+    format: Annotated[
+        export_model.ExportFormat, typer.Option("--format", "-f", help="Export format")
+    ] = export_model.ExportFormat.JSON,
+    path: Annotated[
+        str | None,
+        typer.Argument(help="Output file path")
+    ] = None,
+) -> None:
+    with generate_sync_session(create_sync_engine()) as session:
+        export_model.export_models(session, User, path, format.exporter_class)
+
+
+@app.command(name="import", help="Import users from a file")
+def import_users(
+    format: Annotated[
+        import_model.ImportFormat, typer.Option("--format", "-f", help="Import format")
+    ] = import_model.ImportFormat.JSON,
+    path: Annotated[
+        str | None,
+        typer.Argument(help="Input file path")
+    ] = None,
+) -> None:
+    with generate_sync_session(create_sync_engine()) as session:
+        import_model.import_models(session, User, path, format.importer_class)

@@ -23,7 +23,21 @@ class UserBase(SQLModel, ABC):
 
 class User(UserBase, TableBase, table=True):
     __tablename__ = "sc_user"
+    __exclude__export__ = {"hashed_password"}
+    __import_order__ = ["email", "display_name", "disabled", "is_admin", "password"]
+
     hashed_password: str
+
+    @classmethod
+    def load_from_list(cls, row: list) -> dict:
+        row = super().load_from_list(row)
+        row["hashed_password"] = _get_password_hash(row.pop("password"))
+        return row
+
+    @classmethod
+    def load_from_dict(cls, row: dict) -> dict:
+        row["hashed_password"] = _get_password_hash(row.pop("password"))
+        return row
 
     def set_password(self, password: str | None) -> None:
         if password is not None:

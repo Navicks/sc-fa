@@ -66,7 +66,7 @@ async def read_site_by_id(
 
     stmt = select(Site).where(Site.id == site_id)
     try:
-        site = (await session.execute(stmt)).scalars().one()
+        site = (await session.exec(stmt)).one()
     except NoResultFound as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Site not found"
@@ -92,7 +92,7 @@ async def read_site_by_fqdn(
 ) -> Site:
     stmt = select(Site).where(Site.fqdn == fqdn)
     try:
-        site = (await session.execute(stmt)).scalars().one()
+        site = (await session.exec(stmt)).one()
     except NoResultFound as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Site not found"

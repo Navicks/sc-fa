@@ -59,7 +59,7 @@ async def token(
         )
     )
     try:
-        site_token = (await session.execute(stmt)).one()
+        site_token = (await session.exec(stmt)).one()
     except NoResultFound as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Token not found"
