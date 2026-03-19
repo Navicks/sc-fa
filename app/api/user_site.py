@@ -58,13 +58,13 @@ async def assign_site_to_user(
     try:
         user_site = UserSite.model_validate(create.model_dump() | {"user_id": user_id})
         session.add(user_site)
+        await cache_user_site.delete(redis, target_user)
         await session.commit()
     except IntegrityError as e:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="User and site is already associated",
         ) from e
-    await cache_user_site.delete(redis, target_user, user_site.site_id)
     await session.refresh(user_site)
 
     return user_site

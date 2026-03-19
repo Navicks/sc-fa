@@ -1,23 +1,29 @@
-import sys
-from typing import TextIO
+import inspect
+from typing import Any
+
+import aiofiles
 
 
-def open_input_file(path: str | None) -> TextIO:
-    return (
-        open(path, "r", encoding="utf-8")
-        if path is not None and path not in ("", "-", "/dev/stdin")
-        else sys.stdin
-    )
+async def open_input_file(path: str | None):
+    if path is None or path in ("", "-", "/dev/stdin"):
+        return aiofiles.stdin
+    return await aiofiles.open(path, "r", encoding="utf-8")
 
 
-def open_output_file(path: str | None) -> TextIO:
-    return (
-        open(path, "w", encoding="utf-8")
-        if path is not None and path not in ("", "-", "/dev/stdout")
-        else sys.stdout
-    )
+async def open_output_file(path: str | None):
+    if path is None or path in ("", "-", "/dev/stdout"):
+        return aiofiles.stdout
+    return await aiofiles.open(path, "w", encoding="utf-8")
 
 
-def close(f: TextIO) -> None:
-    if f not in (sys.stdin, sys.stdout, sys.stderr):
-        f.close()
+async def close(f: Any) -> None:
+    if f in (aiofiles.stdin, aiofiles.stdout, aiofiles.stderr):
+        return
+
+    close_fn = getattr(f, "close", None)
+    if close_fn is None:
+        return
+
+    result = close_fn()
+    if inspect.isawaitable(result):
+        await result

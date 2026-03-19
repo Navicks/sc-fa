@@ -15,6 +15,8 @@ class SiteBase(SQLModel, ABC):
 
 
 class Site(SiteBase, TableBase, table=True):
+    __import_order__ = {"fqdn", "site"}
+
     tokens: list["Token"] = Relationship(back_populates="site")
 
 
