@@ -9,7 +9,7 @@ from app.models.user import User
 
 app = FastAPI(
     title="fa API",
-    version="0.1.4",
+    version="0.1.5",
     description="fa API endpoints",
     docs_url=None,
     redoc_url=None,
