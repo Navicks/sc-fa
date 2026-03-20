@@ -34,6 +34,7 @@ def create(
                     display_name=display_name,
                     disabled=False,
                     is_admin=is_admin,
+                    hashed_password="",
                 )
                 user.set_password(password)
                 session.add(user)
@@ -171,7 +172,7 @@ def export(
     async def _export() -> None:
         async with generate_async_session() as session:
             await export_model.export_models(
-                session, User, path, format.exporter_class
+                session, User, path, format
             )
     asyncio.run(_export())
 
@@ -186,6 +187,6 @@ def import_users(
     async def _import() -> None:
         async with generate_async_session() as session:
             await import_model.import_models(
-                session, User, path, format.importer_class
+                session, User, path, format
             )
     asyncio.run(_import())

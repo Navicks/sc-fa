@@ -8,6 +8,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials, OAuth2PasswordBear
 from redis.asyncio import Redis as AsyncRedis
 from sqlalchemy.exc import NoResultFound
 from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette import status
 
 import app.cache.user as cache_user
@@ -15,7 +16,7 @@ import app.cache.user_site as cache_user_site
 from app.database import get_async_session
 from app.database.redis import create_redis_client
 from app.models.user import User
-from app.models.user_site import UserSite
+from app.models.user_site import SitePermission, UserSite
 from app.settings import auth_settings
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token")
@@ -32,7 +33,7 @@ def create_unauthorized_exception(scheme: str = "Bearer") -> HTTPException:
 
 
 async def get_user_by_email(
-    email: str, session, redis: AsyncRedis, ignore_cache: bool = False
+    email: str, session: AsyncSession, redis: AsyncRedis, ignore_cache: bool = False
 ) -> User | None:
     """Get a user by email. Returns None if not found."""
     if not ignore_cache:
@@ -50,7 +51,7 @@ async def get_user_by_email(
 
 
 async def authenticate_user(
-    email: str, password: str, session, redis: AsyncRedis
+    email: str, password: str, session: AsyncSession, redis: AsyncRedis
 ) -> User | None:
     """Authenticate a user by email and password. Returns None on failure."""
     user = await get_user_by_email(email, session, redis, ignore_cache=True)
@@ -75,7 +76,7 @@ def create_access_token(sub: str) -> str:
 async def get_current_user(
     token: Annotated[str, Depends(oauth2_scheme)],
     redis: Annotated[AsyncRedis, Depends(create_redis_client)],
-    session=Depends(get_async_session),
+    session: Annotated[AsyncSession, Depends(get_async_session)],
 ) -> User:
     """Get the current user from a Bearer token."""
     unauthorized = create_unauthorized_exception("Bearer")
@@ -100,7 +101,7 @@ async def get_current_user(
 async def docs_authenticate(
     credentials: Annotated[HTTPBasicCredentials, Depends(http_basic)],
     redis: Annotated[AsyncRedis, Depends(create_redis_client)],
-    session=Depends(get_async_session),
+    session: Annotated[AsyncSession, Depends(get_async_session)],
 ) -> User:
     """Authenticate a user via Basic auth (for API docs access)."""
     user = await authenticate_user(
@@ -117,8 +118,8 @@ async def docs_authenticate(
 async def get_current_user_site(
     current_user: Annotated[User, Depends(get_current_user)],
     redis: Annotated[AsyncRedis, Depends(create_redis_client)],
-    session=Depends(get_async_session),
-) -> dict[int, UserSite] | None:
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+) -> dict[int, SitePermission] | None:
     """Get the current user's site association, if any."""
     cache = await cache_user_site.get(redis, current_user.email)
     if cache:

@@ -71,7 +71,7 @@ def export(
     async def _export() -> None:
         async with generate_async_session() as session:
             await export_model.export_models(
-                session, Site, path, format.exporter_class
+                session, Site, path, format
             )
     asyncio.run(_export())
 
@@ -88,5 +88,5 @@ def import_sites(
 ) -> None:
     async def _import() -> None:
         async with generate_async_session() as session:
-            await import_model.import_models(session, Site, path, format.importer_class)
+            await import_model.import_models(session, Site, path, format)
     asyncio.run(_import())

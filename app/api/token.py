@@ -1,10 +1,11 @@
-from typing import Annotated
+from typing import Annotated, Sequence
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.exceptions import HTTPException, RequestValidationError
 from redis.asyncio import Redis as AsyncRedis
 from sqlalchemy.exc import NoResultFound
 from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette import status
 
 from app.api import site as api_site
@@ -14,7 +15,7 @@ from app.database.redis import create_redis_client
 from app.deps import auth
 from app.models.token import Token, TokenCreate, TokenRead, TokenUpdate
 from app.models.user import User
-from app.models.user_site import SitePermission, UserSite
+from app.models.user_site import SitePermission
 
 router = APIRouter(
     prefix="/sites",
@@ -35,12 +36,14 @@ async def create_token(
     create: TokenCreate,
     current_user: Annotated[User, Depends(auth.get_current_user)],
     user_sites: Annotated[
-        dict[int, UserSite] | None, Depends(auth.get_current_user_site)
+        dict[int, SitePermission] | None, Depends(auth.get_current_user_site)
     ],
-    session=Depends(get_async_session),
+    session: Annotated[AsyncSession, Depends(get_async_session)],
 ) -> Token:
     await api_site.read_site_by_id(site_id, current_user, user_sites, session)
-    if not current_user.is_admin and user_sites[site_id] <= SitePermission.WRITE:
+    if not current_user.is_admin and (
+        user_sites is None or user_sites[site_id] <= SitePermission.WRITE
+    ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions"
         )
@@ -63,12 +66,12 @@ async def read_tokens_for_site(
     site_id: int,
     current_user: Annotated[User, Depends(auth.get_current_user)],
     user_sites: Annotated[
-        dict[int, UserSite] | None, Depends(auth.get_current_user_site)
+        dict[int, SitePermission] | None, Depends(auth.get_current_user_site)
     ],
+    session: Annotated[AsyncSession, Depends(get_async_session)],
     l: int = Query(default=10, gt=0, le=1000),
     o: int = Query(default=0, ge=0),
-    session=Depends(get_async_session),
-) -> list[Token]:
+) -> Sequence[Token]:
     if not current_user.is_admin and site_id not in (user_sites or {}):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Site not found"
@@ -92,9 +95,9 @@ async def read_token_by_token(
     token: str,
     current_user: Annotated[User, Depends(auth.get_current_user)],
     user_sites: Annotated[
-        dict[int, UserSite] | None, Depends(auth.get_current_user_site)
+        dict[int, SitePermission] | None, Depends(auth.get_current_user_site)
     ],
-    session=Depends(get_async_session),
+    session: Annotated[AsyncSession, Depends(get_async_session)],
 ) -> Token:
     if not current_user.is_admin and site_id not in (user_sites or {}):
         raise HTTPException(
@@ -103,12 +106,12 @@ async def read_token_by_token(
 
     stmt = select(Token).where(Token.token == token, Token.site_id == site_id)
     try:
-        token = (await session.exec(stmt)).one()
+        row = (await session.exec(stmt)).one()
     except NoResultFound as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Site or token not found"
         ) from e
-    return token
+    return row
 
 
 @router.get(
@@ -124,9 +127,9 @@ async def read_token_by_id(
     token_id: int,
     current_user: Annotated[User, Depends(auth.get_current_user)],
     user_sites: Annotated[
-        dict[int, UserSite] | None, Depends(auth.get_current_user_site)
+        dict[int, SitePermission] | None, Depends(auth.get_current_user_site)
     ],
-    session=Depends(get_async_session),
+    session: Annotated[AsyncSession, Depends(get_async_session)],
 ) -> Token:
     if not current_user.is_admin and site_id not in (user_sites or {}):
         raise HTTPException(
@@ -157,13 +160,15 @@ async def update_token(
     update: TokenUpdate,
     current_user: Annotated[User, Depends(auth.get_current_user)],
     user_sites: Annotated[
-        dict[int, UserSite] | None, Depends(auth.get_current_user_site)
+        dict[int, SitePermission] | None, Depends(auth.get_current_user_site)
     ],
     redis: Annotated[AsyncRedis, Depends(create_redis_client)],
-    session=Depends(get_async_session),
+    session: Annotated[AsyncSession, Depends(get_async_session)],
 ) -> Token:
     token = await read_token_by_id(site_id, token_id, current_user, user_sites, session)
-    if not current_user.is_admin and user_sites[site_id] < SitePermission.WRITE:
+    if not current_user.is_admin and (
+        user_sites is None or user_sites[site_id] < SitePermission.WRITE
+    ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions"
         )
@@ -216,9 +221,9 @@ async def delete_token(
     current_user: Annotated[User, Depends(auth.get_current_user)],
     redis: Annotated[AsyncRedis, Depends(create_redis_client)],
     user_sites: Annotated[
-        dict[int, UserSite] | None, Depends(auth.get_current_user_site)
+        dict[int, SitePermission] | None, Depends(auth.get_current_user_site)
     ],
-    session=Depends(get_async_session),
+    session: Annotated[AsyncSession, Depends(get_async_session)],
 ) -> None:
     token = await read_token_by_id(site_id, token_id, current_user, user_sites, session)
     await session.refresh(token, attribute_names=["site"])

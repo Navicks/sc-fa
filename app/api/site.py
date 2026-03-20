@@ -4,13 +4,14 @@ from fastapi import APIRouter, Depends
 from fastapi.exceptions import HTTPException
 from sqlalchemy.exc import NoResultFound
 from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette import status
 
 from app.database import get_async_session
 from app.deps import auth
 from app.models.site import Site, SiteCreate, SiteRead, SiteUpdate
 from app.models.user import User
-from app.models.user_site import SitePermission, UserSite
+from app.models.user_site import SitePermission
 
 router = APIRouter(
     prefix="/sites",
@@ -28,7 +29,7 @@ router = APIRouter(
 async def create_site(
     create: SiteCreate,
     current_user: Annotated[User, Depends(auth.get_current_user)],
-    session=Depends(get_async_session),
+    session: Annotated[AsyncSession, Depends(get_async_session)],
 ) -> Site:
     if not current_user.is_admin:
         raise HTTPException(
@@ -55,9 +56,9 @@ async def read_site_by_id(
     site_id: int,
     current_user: Annotated[User, Depends(auth.get_current_user)],
     user_sites: Annotated[
-        dict[int, UserSite] | None, Depends(auth.get_current_user_site)
+        dict[int, SitePermission] | None, Depends(auth.get_current_user_site)
     ],
-    session=Depends(get_async_session),
+    session: Annotated[AsyncSession, Depends(get_async_session)],
 ) -> Site:
     if not current_user.is_admin and site_id not in (user_sites or {}):
         raise HTTPException(
@@ -86,9 +87,9 @@ async def read_site_by_fqdn(
     fqdn: str,
     current_user: Annotated[User, Depends(auth.get_current_user)],
     user_sites: Annotated[
-        dict[int, UserSite] | None, Depends(auth.get_current_user_site)
+        dict[int, SitePermission] | None, Depends(auth.get_current_user_site)
     ],
-    session=Depends(get_async_session),
+    session: Annotated[AsyncSession, Depends(get_async_session)],
 ) -> Site:
     stmt = select(Site).where(Site.fqdn == fqdn)
     try:
@@ -118,12 +119,14 @@ async def update_site(
     update: SiteUpdate,
     current_user: Annotated[User, Depends(auth.get_current_user)],
     user_sites: Annotated[
-        dict[int, UserSite] | None, Depends(auth.get_current_user_site)
+        dict[int, SitePermission] | None, Depends(auth.get_current_user_site)
     ],
-    session=Depends(get_async_session),
+    session: Annotated[AsyncSession, Depends(get_async_session)],
 ) -> Site:
     site = await read_site_by_id(site_id, current_user, user_sites, session)
-    if not current_user.is_admin and user_sites[site_id] < SitePermission.ADMIN:
+    if not current_user.is_admin and (
+        user_sites is None or user_sites[site_id] < SitePermission.ADMIN
+    ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions"
         )

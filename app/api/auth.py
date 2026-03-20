@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends
 from fastapi.security import OAuth2PasswordRequestForm
 from redis.asyncio import Redis as AsyncRedis
 from sqlmodel import SQLModel
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.database import get_async_session
 from app.database.redis import create_redis_client
@@ -26,7 +27,7 @@ class TokenResponse(SQLModel):
 async def generate_token(
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
     redis: Annotated[AsyncRedis, Depends(create_redis_client)],
-    session=Depends(get_async_session),
+    session: Annotated[AsyncSession, Depends(get_async_session)],
 ) -> TokenResponse:
     user = await auth.authenticate_user(
         email=form_data.username,

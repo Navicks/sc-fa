@@ -1,3 +1,6 @@
+from collections.abc import Awaitable, Sequence
+from typing import Any, cast
+
 from redis.asyncio import Redis as AsyncRedis
 
 from app.cache import _CACHE_MAX_TTL
@@ -13,21 +16,23 @@ def get_key(email: str) -> str:
 
 async def get(redis: AsyncRedis, email: str) -> dict[int, SitePermission] | None:
     """Get the Redis cache value for a given email."""
-    cache: dict | None = await redis.hgetall(get_key(email))
+    # for prepend type checking
+    hgetall = cast(Awaitable[dict[Any, Any]], redis.hgetall(get_key(email)))
+    cache = await hgetall
     if not cache:
         return None
     return {int(k): SitePermission(int(v)) for k, v in cache.items()}
 
 
 async def set(
-    redis: AsyncRedis, user: User | str, user_sites: list[UserSite]
+    redis: AsyncRedis, user: User | str, user_sites: Sequence[UserSite]
 ) -> dict[int, SitePermission]:
     """Set the Redis cache for a given UserSite instances."""
     cache = {}
     pipe = redis.pipeline()
     key = get_key(user.email if isinstance(user, User) else user)
     for site in user_sites:
-        pipe.hset(key, site.site_id, int(site.permission))
+        pipe.hset(key, str(site.site_id), str(int(site.permission)))
         cache[site.site_id] = site.permission
     pipe.expire(key, _CACHE_MAX_TTL)
     await pipe.execute()

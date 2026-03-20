@@ -5,6 +5,7 @@ from fastapi.exceptions import HTTPException
 from redis.asyncio import Redis as AsyncRedis
 from sqlalchemy.exc import NoResultFound
 from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette import status
 
 from app.cache import user as cache_user
@@ -34,7 +35,7 @@ router = APIRouter(
 async def create_user(
     create: UserCreate,
     current_user: Annotated[User, Depends(auth.get_current_user)],
-    session=Depends(get_async_session),
+    session: Annotated[AsyncSession, Depends(get_async_session)],
 ) -> User:
     if not current_user.is_admin:
         raise HTTPException(
@@ -79,7 +80,7 @@ async def read_current_user(
 async def read_user_by_id(
     user_id: int,
     current_user: Annotated[User, Depends(auth.get_current_user)],
-    session=Depends(get_async_session),
+    session: Annotated[AsyncSession, Depends(get_async_session)],
 ) -> User:
     if current_user.id == user_id:
         return current_user
@@ -117,7 +118,7 @@ async def read_user_by_email(
     email: str,
     current_user: Annotated[User, Depends(auth.get_current_user)],
     redis: Annotated[AsyncRedis, Depends(auth.create_redis_client)],
-    session=Depends(get_async_session),
+    session: Annotated[AsyncSession, Depends(get_async_session)],
 ) -> User:
     if current_user.email == email:
         return current_user
@@ -147,7 +148,7 @@ async def update_current_user(
     update: UserUpdate,
     current_user: Annotated[User, Depends(auth.get_current_user)],
     redis: Annotated[AsyncRedis, Depends(create_redis_client)],
-    session=Depends(get_async_session),
+    session: Annotated[AsyncSession, Depends(get_async_session)],
 ) -> User:
     user = current_user
 
@@ -181,7 +182,7 @@ async def update_user(
     update: UserUpdate,
     current_user: Annotated[User, Depends(auth.get_current_user)],
     redis: Annotated[AsyncRedis, Depends(create_redis_client)],
-    session=Depends(get_async_session),
+    session: Annotated[AsyncSession, Depends(get_async_session)],
 ) -> User:
     if not current_user.is_admin:
         raise HTTPException(
@@ -219,7 +220,7 @@ async def delete_user(
     user_id: int,
     current_user: Annotated[User, Depends(auth.get_current_user)],
     redis: Annotated[AsyncRedis, Depends(create_redis_client)],
-    session=Depends(get_async_session),
+    session: Annotated[AsyncSession, Depends(get_async_session)],
 ) -> None:
     if current_user.id == user_id:
         raise HTTPException(

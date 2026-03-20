@@ -1,10 +1,11 @@
-from typing import Annotated
+from typing import Annotated, Sequence
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.exceptions import HTTPException
 from redis.asyncio import Redis as AsyncRedis
 from sqlalchemy.exc import IntegrityError, NoResultFound
 from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette import status
 
 from app.api import user as api_user
@@ -45,7 +46,7 @@ async def assign_site_to_user(
     create: UserSiteCreateWithoutUser,
     current_user: Annotated[User, Depends(auth.get_current_user)],
     redis: Annotated[AsyncRedis, Depends(create_redis_client)],
-    session=Depends(get_async_session),
+    session: Annotated[AsyncSession, Depends(get_async_session)],
 ) -> UserSite:
     if not current_user.is_admin:
         raise HTTPException(
@@ -78,10 +79,10 @@ async def assign_site_to_user(
 )
 async def get_sites_for_current_user(
     current_user: Annotated[User, Depends(auth.get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_async_session)],
     l: int = Query(default=10, gt=0, le=1000),
     o: int = Query(default=0, ge=0),
-    session=Depends(get_async_session),
-) -> list[UserSite]:
+) -> Sequence[UserSite]:
     stmt = (
         select(UserSite).where(UserSite.user_id == current_user.id).limit(l).offset(o)
     )
@@ -104,10 +105,10 @@ async def get_sites_for_current_user(
 async def get_sites_for_user(
     user_id: int,
     current_user: Annotated[User, Depends(auth.get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_async_session)],
     l: int = Query(default=10, gt=0, le=1000),
     o: int = Query(default=0, ge=0),
-    session=Depends(get_async_session),
-) -> list[UserSite]:
+) -> Sequence[UserSite]:
     await api_user.read_user_by_id(user_id, current_user, session)
 
     if not current_user.is_admin and current_user.id != user_id:
@@ -139,7 +140,7 @@ async def update_user_site_permission(
     update: UserSiteUpdate,
     current_user: Annotated[User, Depends(auth.get_current_user)],
     redis: Annotated[AsyncRedis, Depends(create_redis_client)],
-    session=Depends(get_async_session),
+    session: Annotated[AsyncSession, Depends(get_async_session)],
 ) -> UserSite:
     if not current_user.is_admin and current_user.id != user_id:
         raise HTTPException(
@@ -161,7 +162,7 @@ async def update_user_site_permission(
     for key, value in update.model_dump(exclude_unset=True).items():
         setattr(user_site, key, value)
 
-    await cache_user_site.delete(redis, target_user, site_id)
+    await cache_user_site.delete(redis, target_user)
     await session.commit()
     await session.refresh(user_site)
     return user_site
