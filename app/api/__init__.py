@@ -1,3 +1,5 @@
+from importlib.metadata import version
+
 from fastapi import Depends, FastAPI
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.responses import HTMLResponse
@@ -9,7 +11,7 @@ from app.models.user import User
 
 app = FastAPI(
     title="fa API",
-    version="0.1.5",
+    version=version("sc_fa"),
     description="fa API endpoints",
     docs_url=None,
     redoc_url=None,

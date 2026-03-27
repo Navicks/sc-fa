@@ -1,5 +1,6 @@
 import enum
 from abc import ABC
+from typing import ClassVar
 
 from sqlmodel import Field, SQLModel
 
@@ -24,7 +25,7 @@ class UserSiteUserBase(SQLModel, ABC):
 class UserSite(UserSiteBase, UserSiteUserBase, table=True):
     # This table does not have id column,
     # so we use the combination of user_id and site_id as the primary key
-    __tablename__ = "user_site"
+    __tablename__: ClassVar[str] = "user_site"  # type: ignore[assignment]
     pass
 
 

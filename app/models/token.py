@@ -23,6 +23,19 @@ class UtcDateTime(TypeDecorator):
         return value
 
 
+class HttpUrlType(TypeDecorator):
+    """SQLAlchemy type that stores HttpUrl as string."""
+
+    impl = VARCHAR(2048)
+    cache_ok = True
+
+    def process_bind_param(self, value: HttpUrl | None, dialect) -> str | None:
+        return str(value) if value is not None else None
+
+    def process_result_value(self, value: str | None, dialect) -> HttpUrl | None:
+        return HttpUrl(value) if value is not None else None
+
+
 class TokenStatus(IntEnum):
     MOVED_PERMANENTLY = status.HTTP_301_MOVED_PERMANENTLY
     FOUND = status.HTTP_302_FOUND
@@ -31,18 +44,15 @@ class TokenStatus(IntEnum):
 
 
 class TokenBase(SQLModel, ABC):
-    redirect_uri: HttpUrl | None = Field(default=None, max_length=2048, sa_type=VARCHAR)
+    redirect_uri: HttpUrl | None = Field(
+        default=None, max_length=2048, sa_type=HttpUrlType
+    )
     subject: str | None = Field(default=None, max_length=255)
     status_code: TokenStatus = Field(default=TokenStatus.FOUND)
     valid_from: datetime | None = Field(default=None, sa_type=UtcDateTime)
     valid_to: datetime | None = Field(default=None, sa_type=UtcDateTime)
 
     __table_args__ = (UniqueConstraint("site_id", "token", name="uix_site_id_token"),)
-
-    @field_validator("redirect_uri", mode="after")
-    @classmethod
-    def convert_url_to_str(cls, v: HttpUrl | None) -> str | None:
-        return v if v is None else str(v)
 
     @field_validator("valid_from", "valid_to", mode="before")
     @classmethod
@@ -78,7 +88,7 @@ class TokenRead(TokenBase, ReadBase):
     token: str
 
 
-class TokenUpdate(TokenBase, UpdateBase):
+class TokenUpdate(UpdateBase):
     redirect_uri: HttpUrl | None = None
     subject: str | None = None
     status_code: TokenStatus | None = None
