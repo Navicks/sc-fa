@@ -50,7 +50,7 @@ async def create_token(
 
     token = Token.model_validate(create.model_dump() | {"site_id": site_id})
     session.add(token)
-    await session.commit()
+    await session.flush()
     await session.refresh(token)
     return token
 
@@ -204,7 +204,8 @@ async def update_token(
 
     await session.refresh(token, attribute_names=["site"])
     await cache_token.delete(redis, token)
-    await session.commit()
+    await session.flush()
+    await session.refresh(token)
     return token
 
 
@@ -229,5 +230,5 @@ async def delete_token(
     await session.refresh(token, attribute_names=["site"])
     await cache_token.delete(redis, token)
     await session.delete(token)
-    await session.commit()
+    await session.flush()
     return None

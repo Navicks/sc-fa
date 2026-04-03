@@ -46,7 +46,7 @@ async def create_user(
     new_user = User.model_validate(create.model_dump() | {"hashed_password": ""})
     new_user.set_password(create.password)
     session.add(new_user)
-    await session.commit()
+    await session.flush()
     await session.refresh(new_user)
     return new_user
 
@@ -158,9 +158,9 @@ async def update_current_user(
         else:
             setattr(user, key, value)
 
-    await cache_user.delete(redis, user)
-    await session.commit()
+    await session.flush()
     await session.refresh(user)
+    await cache_user.delete(redis, user)
     return user
 
 
@@ -197,9 +197,9 @@ async def update_user(
         else:
             setattr(user, key, value)
 
-    await cache_user.delete(redis, user)
-    await session.commit()
+    await session.flush()
     await session.refresh(user)
+    await cache_user.delete(redis, user)
     return user
 
 
@@ -235,7 +235,6 @@ async def delete_user(
         )
 
     user = await read_user_by_id(user_id, current_user, session)
-    await cache_user.delete(redis, user)
     await session.delete(user)
-    await session.commit()
+    await cache_user.delete(redis, user)
     return None

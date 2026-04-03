@@ -3,6 +3,16 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 SETTINGS_FILE = ".env"
 
 
+class AppSettings(BaseSettings):
+    model_config = SettingsConfigDict(
+        extra="ignore",
+        env_file=SETTINGS_FILE,
+        env_file_encoding="utf-8",
+    )
+
+    debug: bool = False
+
+
 class AuthSettings(BaseSettings):
     model_config = SettingsConfigDict(
         extra="ignore",
@@ -41,6 +51,7 @@ class RedisSettings(BaseSettings):
     redis_password: str | None = None
 
 
-auth_settings = AuthSettings()
-database_settings = DatabaseSettings()
-redis_settings = RedisSettings()
+app_settings = AppSettings()
+auth_settings = AuthSettings()  # type: ignore[call-arg]
+database_settings = DatabaseSettings()  # type: ignore[call-arg]
+redis_settings = RedisSettings()  # type: ignore[call-arg]

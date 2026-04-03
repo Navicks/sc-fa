@@ -39,7 +39,7 @@ async def create_site(
 
     site = Site.model_validate(create)
     session.add(site)
-    await session.commit()
+    await session.flush()
     await session.refresh(site)
     return site
 
@@ -133,6 +133,6 @@ async def update_site(
 
     for key, value in update.model_dump(exclude_unset=True).items():
         setattr(site, key, value)
-    await session.commit()
+    await session.flush()
     await session.refresh(site)
     return site

@@ -17,7 +17,7 @@ from app.database import get_async_session
 from app.database.redis import create_redis_client
 from app.models.user import User
 from app.models.user_site import SitePermission, UserSite
-from app.settings import auth_settings
+from app.settings import app_settings, auth_settings
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token")
 http_basic = HTTPBasic()
@@ -104,6 +104,16 @@ async def docs_authenticate(
     session: Annotated[AsyncSession, Depends(get_async_session)],
 ) -> User:
     """Authenticate a user via Basic auth (for API docs access)."""
+    if app_settings.debug:
+        return User(
+            id=0,
+            email="debug@example.com",
+            display_name="Debug User",
+            disabled=False,
+            is_admin=True,
+            hashed_password="",
+        )
+
     user = await authenticate_user(
         credentials.username,
         credentials.password,

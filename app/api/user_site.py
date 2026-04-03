@@ -60,7 +60,7 @@ async def assign_site_to_user(
         user_site = UserSite.model_validate(create.model_dump() | {"user_id": user_id})
         session.add(user_site)
         await cache_user_site.delete(redis, target_user)
-        await session.commit()
+        await session.flush()
     except IntegrityError as e:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -163,6 +163,6 @@ async def update_user_site_permission(
         setattr(user_site, key, value)
 
     await cache_user_site.delete(redis, target_user)
-    await session.commit()
+    await session.flush()
     await session.refresh(user_site)
     return user_site

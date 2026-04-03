@@ -1,14 +1,20 @@
 from abc import ABC
 from datetime import datetime, timezone
 from enum import IntEnum
+from typing import Annotated
 
 import starlette.status as status
-from pydantic import HttpUrl, field_validator, model_validator
+from pydantic import HttpUrl, StringConstraints, field_validator, model_validator
 from sqlalchemy import DateTime, TypeDecorator, UniqueConstraint
 from sqlmodel import VARCHAR, Field, Relationship, SQLModel
 
 from app.models.base import CreateBase, ReadBase, TableBase, UpdateBase
 from app.models.site import Site
+
+TokenType = Annotated[
+    str,
+    StringConstraints(pattern=r"^[0-9A-Za-z_-]{1,255}$", max_length=255),
+]
 
 
 class UtcDateTime(TypeDecorator):
@@ -73,19 +79,19 @@ class TokenBase(SQLModel, ABC):
 
 
 class Token(TokenBase, TableBase, table=True):
-    token: str = Field(index=True, max_length=255)
+    token: TokenType = Field(index=True)
 
     site_id: int = Field(index=True, foreign_key="site.id")
     site: Site | None = Relationship(back_populates="tokens")
 
 
 class TokenCreate(TokenBase, CreateBase):
-    token: str
+    token: TokenType
 
 
 class TokenRead(TokenBase, ReadBase):
     site_id: int
-    token: str
+    token: TokenType
 
 
 class TokenUpdate(UpdateBase):
@@ -94,3 +100,4 @@ class TokenUpdate(UpdateBase):
     status_code: TokenStatus | None = None
     valid_from: datetime | None = None
     valid_to: datetime | None = None
+    token: TokenType | None = None
