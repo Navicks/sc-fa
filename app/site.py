@@ -9,7 +9,7 @@ from fastapi.exceptions import HTTPException
 from fastapi.responses import RedirectResponse
 from redis.asyncio import Redis as AsyncRedis
 from sqlalchemy.exc import NoResultFound
-from sqlmodel import or_, select
+from sqlmodel import col, or_, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette import status
 
@@ -96,8 +96,8 @@ async def token(
         .where(
             Token.token == token,
             Site.fqdn == host,
-            or_(Token.valid_from.is_(None), Token.valid_from <= now),
-            or_(Token.valid_to.is_(None), now < Token.valid_to),
+            or_(col(Token.valid_from).is_(None), col(Token.valid_from) <= now),
+            or_(col(Token.valid_to).is_(None), now < col(Token.valid_to)),
         )
     )
     try:

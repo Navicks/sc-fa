@@ -13,8 +13,18 @@ from app.models.site import Site
 
 TokenType = Annotated[
     str,
-    StringConstraints(pattern=r"^[0-9A-Za-z_-]{1,255}$", max_length=255),
+    StringConstraints(
+        pattern=r"^[0-9A-Za-z_-]{1,255}$", strip_whitespace=True, max_length=255
+    ),
 ]
+
+
+def _normalize_to_utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 class UtcDateTime(TypeDecorator):
@@ -24,9 +34,7 @@ class UtcDateTime(TypeDecorator):
     cache_ok = True
 
     def process_result_value(self, value: datetime | None, dialect) -> datetime | None:
-        if value is not None and value.tzinfo is None:
-            return value.replace(tzinfo=timezone.utc)
-        return value
+        return _normalize_to_utc(value)
 
 
 class HttpUrlType(TypeDecorator):
@@ -60,19 +68,13 @@ class TokenBase(SQLModel, ABC):
 
     __table_args__ = (UniqueConstraint("site_id", "token", name="uix_site_id_token"),)
 
-    @field_validator("valid_from", "valid_to", mode="before")
+    @field_validator("valid_from", "valid_to", mode="after")
     @classmethod
-    def ensure_utc(cls, v: datetime | None) -> datetime | None:
-        if v is None:
-            return v
-        if isinstance(v, datetime):
-            if v.tzinfo is None:
-                return v.replace(tzinfo=timezone.utc)
-            return v.astimezone(timezone.utc)
-        return v
+    def normalize_to_utc(cls, v: datetime | None) -> datetime | None:
+        return _normalize_to_utc(v)
 
     @model_validator(mode="after")
-    def validate_dates(self):
+    def validate_period(self):
         if self.valid_from and self.valid_to and self.valid_from >= self.valid_to:
             raise ValueError("valid_from must be before valid_to")
         return self
@@ -101,3 +103,14 @@ class TokenUpdate(UpdateBase):
     valid_from: datetime | None = None
     valid_to: datetime | None = None
     token: TokenType | None = None
+
+    @field_validator("valid_from", "valid_to", mode="after")
+    @classmethod
+    def normalize_to_utc(cls, v: datetime | None) -> datetime | None:
+        return _normalize_to_utc(v)
+
+    @model_validator(mode="after")
+    def validate_period(self):
+        if self.valid_from and self.valid_to and self.valid_from >= self.valid_to:
+            raise ValueError("valid_from must be before valid_to")
+        return self

@@ -20,7 +20,7 @@ from app.models.user_site import SitePermission, UserSite
 from app.settings import app_settings, auth_settings
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token")
-http_basic = HTTPBasic()
+http_basic = HTTPBasic(auto_error=False)
 
 
 def create_unauthorized_exception(scheme: str = "Bearer") -> HTTPException:
@@ -113,6 +113,8 @@ async def docs_authenticate(
             is_admin=True,
             hashed_password="",
         )
+    if credentials is None:
+        raise create_unauthorized_exception("Basic")
 
     user = await authenticate_user(
         credentials.username,

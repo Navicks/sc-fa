@@ -21,13 +21,15 @@ app = FastAPI(
 @app.get("/int/docs", response_class=HTMLResponse, include_in_schema=False)
 async def swagger_docs(_: User = Depends(auth.docs_authenticate)):
     return get_swagger_ui_html(
-        openapi_url=app.openapi_url, title=app.title + " - Swagger UI"
+        openapi_url=str(app.openapi_url), title=app.title + " - Swagger UI"
     )
 
 
 @app.get("/int/redoc", response_class=HTMLResponse, include_in_schema=False)
 async def redoc_docs(_: User = Depends(auth.docs_authenticate)):
-    return get_redoc_html(openapi_url=app.openapi_url, title=app.title + " - ReDoc")
+    return get_redoc_html(
+        openapi_url=str(app.openapi_url), title=app.title + " - ReDoc"
+    )
 
 
 @app.get("/", include_in_schema=False)
