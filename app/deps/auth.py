@@ -1,5 +1,6 @@
 import datetime
-from typing import Annotated
+import uuid
+from typing import Annotated, Any
 
 import jwt
 from fastapi import Depends
@@ -60,42 +61,119 @@ async def authenticate_user(
     return user
 
 
-def create_access_token(sub: str) -> str:
+def generate_token_id() -> uuid.UUID:
+    return uuid.uuid4()
+
+
+def create_access_token(
+    sub: str, jti: uuid.UUID, now: datetime.datetime
+) -> tuple[str, datetime.datetime]:
+    expire = now + datetime.timedelta(minutes=auth_settings.access_token_expire_minutes)
     payload = {
+        "iss": "fa-api access",
         "sub": sub,
-        "exp": datetime.datetime.now(datetime.timezone.utc)
-        + datetime.timedelta(minutes=auth_settings.access_token_expire_minutes),
+        "jti": str(jti),
+        "exp": expire,
     }
-    return jwt.encode(
-        payload,
-        auth_settings.secret_key,
-        algorithm=auth_settings.algorithm,
+    return (
+        jwt.encode(
+            payload,
+            auth_settings.secret_key,
+            algorithm=auth_settings.algorithm,
+        ),
+        expire,
     )
 
 
-async def get_current_user(
-    token: Annotated[str, Depends(oauth2_scheme)],
-    redis: Annotated[AsyncRedis, Depends(create_redis_client)],
-    session: Annotated[AsyncSession, Depends(get_async_session)],
-) -> User:
-    """Get the current user from a Bearer token."""
-    unauthorized = create_unauthorized_exception("Bearer")
+def create_refresh_token(
+    sub: str, jti: uuid.UUID, now: datetime.datetime
+) -> tuple[str, datetime.datetime]:
+    expire = now + datetime.timedelta(
+        minutes=auth_settings.refresh_token_expire_minutes
+    )
+    payload = {
+        "iss": "fa-api refresh",
+        "sub": sub,
+        "jti": str(jti),
+        "exp": expire,
+    }
+    return (
+        jwt.encode(
+            payload,
+            auth_settings.secret_key,
+            algorithm=auth_settings.algorithm,
+        ),
+        expire,
+    )
+
+
+def _get_token_key(jti: uuid.UUID) -> str:
+    return f"active_token:{jti}"
+
+
+async def activate_token(
+    jti: uuid.UUID, exp: datetime.datetime, now: datetime.datetime, redis: AsyncRedis
+):
+    """Mark a token as active in Redis (for revocation tracking)."""
+    ttl = int((exp - now).total_seconds())
+    return await redis.set(_get_token_key(jti), "true", ex=ttl)
+
+
+async def revoke_token(jti: uuid.UUID, redis: AsyncRedis):
+    """Revoke a token by its JTI."""
+    return await redis.delete(_get_token_key(jti))
+
+
+async def is_token_active(jti: uuid.UUID, redis: AsyncRedis) -> bool:
+    """Check if a token is active (not revoked)."""
+    return await redis.exists(_get_token_key(jti)) == 1
+
+
+def get_token_payload(token: Annotated[str, Depends(oauth2_scheme)]) -> dict[str, Any]:
+    """Decode a JWT token and return its payload."""
     try:
         payload = jwt.decode(
             token,
             auth_settings.secret_key,
             algorithms=[auth_settings.algorithm],
         )
-        email: str | None = payload.get("sub")
-        if email is None:
-            raise unauthorized
+        return payload
     except jwt.PyJWTError:
+        raise create_unauthorized_exception("Bearer")
+
+
+async def get_current_user(
+    payload: Annotated[dict[str, Any], Depends(get_token_payload)],
+    redis: Annotated[AsyncRedis, Depends(create_redis_client)],
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+) -> User:
+    """Get the current user from a Bearer token."""
+    unauthorized = create_unauthorized_exception("Bearer")
+    email: str | None = payload.get("sub")
+    if email is None:
+        raise unauthorized
+    if not await is_token_active(get_jti(payload), redis):
+        raise unauthorized
+    exp = payload.get("exp")
+    if exp is None or datetime.datetime.fromtimestamp(
+        exp, tz=datetime.timezone.utc
+    ) < datetime.datetime.now(tz=datetime.timezone.utc):
         raise unauthorized
 
     user = await get_user_by_email(email, session, redis)
     if user is None:
         raise unauthorized
     return user
+
+
+def get_jti(
+    payload: Annotated[dict[str, Any], Depends(get_token_payload)],
+) -> uuid.UUID:
+    """Get the JTI (token ID) from a Bearer token payload."""
+    jti: str | None = payload.get("jti")
+    if jti is None:
+        raise create_unauthorized_exception("Bearer")
+    return uuid.UUID(jti)
 
 
 async def docs_authenticate(
