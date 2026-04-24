@@ -1,9 +1,10 @@
 import datetime
+import enum
 import uuid
 from typing import Annotated, Any
 
 import jwt
-from fastapi import Depends
+from fastapi import Depends, Request
 from fastapi.exceptions import HTTPException
 from fastapi.security import HTTPBasic, HTTPBasicCredentials, OAuth2PasswordBearer
 from redis.asyncio import Redis as AsyncRedis
@@ -22,6 +23,11 @@ from app.settings import app_settings, auth_settings
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token")
 http_basic = HTTPBasic(auto_error=False)
+
+
+class TokenType(enum.StrEnum):
+    ACCESS = "access"
+    REFRESH = "refresh"
 
 
 def create_unauthorized_exception(scheme: str = "Bearer") -> HTTPException:
@@ -65,46 +71,41 @@ def generate_token_id() -> uuid.UUID:
     return uuid.uuid4()
 
 
-def create_access_token(
-    sub: str, jti: uuid.UUID, now: datetime.datetime
-) -> tuple[str, datetime.datetime]:
-    expire = now + datetime.timedelta(minutes=auth_settings.access_token_expire_minutes)
+def create_token(
+    sub: str,
+    jti: uuid.UUID,
+    now: datetime.datetime,
+    exp: datetime.datetime,
+    token_type: TokenType,
+    request: Request,
+) -> str:
     payload = {
-        "iss": "fa-api access",
+        "iss": f"{request.url.scheme}://{request.url.hostname}:{request.url.port}/",
+        "aud": f"fa-api {token_type.value}",
         "sub": sub,
         "jti": str(jti),
-        "exp": expire,
+        "iat": now,
+        "exp": exp,
     }
-    return (
-        jwt.encode(
-            payload,
-            auth_settings.secret_key,
-            algorithm=auth_settings.algorithm,
-        ),
-        expire,
+    return jwt.encode(
+        payload,
+        auth_settings.secret_key,
+        algorithm=auth_settings.algorithm,
     )
+
+
+def create_access_token(
+    sub: str, jti: uuid.UUID, now: datetime.datetime, request: Request
+) -> tuple[str, datetime.datetime]:
+    exp = now + datetime.timedelta(minutes=auth_settings.access_token_expire_minutes)
+    return create_token(sub, jti, now, exp, TokenType.ACCESS, request), exp
 
 
 def create_refresh_token(
-    sub: str, jti: uuid.UUID, now: datetime.datetime
+    sub: str, jti: uuid.UUID, now: datetime.datetime, request: Request
 ) -> tuple[str, datetime.datetime]:
-    expire = now + datetime.timedelta(
-        minutes=auth_settings.refresh_token_expire_minutes
-    )
-    payload = {
-        "iss": "fa-api refresh",
-        "sub": sub,
-        "jti": str(jti),
-        "exp": expire,
-    }
-    return (
-        jwt.encode(
-            payload,
-            auth_settings.secret_key,
-            algorithm=auth_settings.algorithm,
-        ),
-        expire,
-    )
+    exp = now + datetime.timedelta(minutes=auth_settings.refresh_token_expire_minutes)
+    return create_token(sub, jti, now, exp, TokenType.REFRESH, request), exp
 
 
 def _get_token_key(jti: uuid.UUID) -> str:
@@ -129,16 +130,26 @@ async def is_token_active(jti: uuid.UUID, redis: AsyncRedis) -> bool:
     return await redis.exists(_get_token_key(jti)) == 1
 
 
-def get_token_payload(token: Annotated[str, Depends(oauth2_scheme)]) -> dict[str, Any]:
+def get_token_payload(
+    token: Annotated[str, Depends(oauth2_scheme)],
+    request: Request,
+) -> dict[str, Any]:
     """Decode a JWT token and return its payload."""
     try:
+        audiences = [f"fa-api {t.value}" for t in TokenType]
         payload = jwt.decode(
             token,
             auth_settings.secret_key,
             algorithms=[auth_settings.algorithm],
+            issuer=[
+                f"{request.url.scheme}://{request.url.hostname}:{request.url.port}/"
+            ],
+            audience=audiences,
+            options={"require": ["iss", "aud", "sub", "jti", "iat", "exp"]},
         )
         return payload
-    except jwt.PyJWTError:
+    except jwt.PyJWTError as e:
+        print(e)
         raise create_unauthorized_exception("Bearer")
 
 
@@ -154,12 +165,6 @@ async def get_current_user(
         raise unauthorized
     if not await is_token_active(get_jti(payload), redis):
         raise unauthorized
-    exp = payload.get("exp")
-    if exp is None or datetime.datetime.fromtimestamp(
-        exp, tz=datetime.timezone.utc
-    ) < datetime.datetime.now(tz=datetime.timezone.utc):
-        raise unauthorized
-
     user = await get_user_by_email(email, session, redis)
     if user is None:
         raise unauthorized
@@ -170,10 +175,29 @@ def get_jti(
     payload: Annotated[dict[str, Any], Depends(get_token_payload)],
 ) -> uuid.UUID:
     """Get the JTI (token ID) from a Bearer token payload."""
-    jti: str | None = payload.get("jti")
-    if jti is None:
+    try:
+        return uuid.UUID(payload.get("jti"))
+    except ValueError:
         raise create_unauthorized_exception("Bearer")
-    return uuid.UUID(jti)
+
+
+def is_access_token(
+    payload: Annotated[dict[str, Any], Depends(get_token_payload)],
+) -> bool:
+    """Check if a token is an access token."""
+    print(payload.get("aud"))
+    if payload.get("aud") != "fa-api access":
+        raise create_unauthorized_exception("Bearer")
+    return True
+
+
+def is_refresh_token(
+    payload: Annotated[dict[str, Any], Depends(get_token_payload)],
+) -> bool:
+    """Check if a token is a refresh token."""
+    if payload.get("aud") != "fa-api refresh":
+        raise create_unauthorized_exception("Bearer")
+    return True
 
 
 async def docs_authenticate(

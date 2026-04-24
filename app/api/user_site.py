@@ -29,8 +29,9 @@ router = APIRouter(
 
 @router.post(
     "/{user_id}/sites/",
-    status_code=status.HTTP_201_CREATED,
     response_model=UserSiteRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(auth.is_access_token)],
     summary="Assign Site to User",
     description="Assign a site to a user",
     responses={
@@ -74,6 +75,7 @@ async def assign_site_to_user(
 @router.get(
     "/me/sites/",
     response_model=list[UserSiteRead],
+    dependencies=[Depends(auth.is_access_token)],
     summary="Get Sites for Current User",
     description="Get all sites assigned to the current user",
 )
@@ -93,6 +95,7 @@ async def get_sites_for_current_user(
 @router.get(
     "/{user_id}/sites/",
     response_model=list[UserSiteRead],
+    dependencies=[Depends(auth.is_access_token)],
     summary="Get Sites for User",
     description="Get all sites assigned to a user",
     responses={
@@ -125,6 +128,7 @@ async def get_sites_for_user(
 @router.patch(
     "/{user_id}/sites/{site_id}/",
     response_model=UserSiteRead,
+    dependencies=[Depends(auth.is_access_token)],
     summary="Update User-Site Permission",
     description="Update a user's permission for a specific site",
     responses={

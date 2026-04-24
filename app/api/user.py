@@ -24,6 +24,7 @@ router = APIRouter(
     "/",
     response_model=UserRead,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(auth.is_access_token)],
     summary="Create User",
     description="Create a new user",
     responses={
@@ -55,6 +56,7 @@ async def create_user(
     "/me/",
     response_model=UserRead,
     status_code=status.HTTP_200_OK,
+    dependencies=[Depends(auth.is_access_token)],
     summary="Get Current User",
     description="Get the currently authenticated user",
 )
@@ -68,6 +70,7 @@ async def read_current_user(
     "/{user_id}/",
     response_model=UserRead,
     status_code=status.HTTP_200_OK,
+    dependencies=[Depends(auth.is_access_token)],
     summary="Get User by ID",
     description="Get a user by their ID",
     responses={
@@ -105,6 +108,7 @@ async def read_user_by_id(
     "/email/{email}/",
     response_model=UserRead,
     status_code=status.HTTP_200_OK,
+    dependencies=[Depends(auth.is_access_token)],
     summary="Get User by Email",
     description="Get a user by their email",
     responses={
@@ -141,6 +145,7 @@ async def read_user_by_email(
     "/me/",
     response_model=UserRead,
     status_code=status.HTTP_200_OK,
+    dependencies=[Depends(auth.is_access_token)],
     summary="Update Current User",
     description="Update the currently authenticated user",
 )
@@ -168,6 +173,7 @@ async def update_current_user(
     "/{user_id}/",
     response_model=UserRead,
     status_code=status.HTTP_200_OK,
+    dependencies=[Depends(auth.is_access_token)],
     summary="Update User",
     description="Update an existing user",
     responses={
@@ -206,6 +212,7 @@ async def update_user(
 @router.delete(
     "/{user_id}/",
     status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(auth.is_access_token)],
     summary="Delete User",
     description="Delete an existing user",
     responses={
