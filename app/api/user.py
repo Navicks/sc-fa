@@ -155,7 +155,9 @@ async def update_current_user(
     redis: Annotated[AsyncRedis, Depends(create_redis_client)],
     session: Annotated[AsyncSession, Depends(get_async_session)],
 ) -> User:
-    user = current_user
+    # Read current user from the database to ensure we have the latest data
+    # and a valid session-bound instance
+    user = await read_user_by_id(current_user.id, current_user, session)
 
     for key, value in update.model_dump(exclude_unset=True).items():
         if key == "password":

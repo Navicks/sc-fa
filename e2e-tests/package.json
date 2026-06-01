@@ -1,0 +1,21 @@
+{
+  "name": "fa-api-e2e",
+  "version": "0.1.0",
+  "description": "E2E (API) tests for fa API using Playwright",
+  "private": true,
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --reporter=list",
+    "report": "playwright show-report",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0",
+    "@types/node": "^22.0.0",
+    "dotenv": "^16.4.5",
+    "typescript": "^5.6.0"
+  },
+  "dependencies": {
+    "playwright": "^1.60.0"
+  }
+}

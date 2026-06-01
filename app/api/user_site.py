@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.exceptions import HTTPException
 from redis.asyncio import Redis as AsyncRedis
 from sqlalchemy.exc import IntegrityError, NoResultFound
-from sqlmodel import select
+from sqlmodel import func, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette import status
 
@@ -13,6 +13,7 @@ from app.cache import user_site as cache_user_site
 from app.database import get_async_session
 from app.database.redis import create_redis_client
 from app.deps import auth
+from app.models.site import Site
 from app.models.user import User
 from app.models.user_site import (
     UserSite,
@@ -56,6 +57,12 @@ async def assign_site_to_user(
         )
 
     target_user = await api_user.read_user_by_id(user_id, current_user, session)
+
+    stmt = select(func.count()).select_from(Site).where(Site.id == create.site_id)
+    if (await session.exec(stmt)).one() == 0:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Site not found"
+        )
 
     try:
         user_site = UserSite.model_validate(create.model_dump() | {"user_id": user_id})

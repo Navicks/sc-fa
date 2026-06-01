@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.exceptions import HTTPException, RequestValidationError
 from redis.asyncio import Redis as AsyncRedis
 from sqlalchemy.exc import NoResultFound
-from sqlmodel import select
+from sqlmodel import func, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette import status
 
@@ -13,6 +13,7 @@ from app.cache import token as cache_token
 from app.database import get_async_session
 from app.database.redis import create_redis_client
 from app.deps import auth
+from app.models.site import Site
 from app.models.token import Token, TokenCreate, TokenRead, TokenUpdate
 from app.models.user import User
 from app.models.user_site import SitePermission
@@ -75,6 +76,12 @@ async def read_tokens_for_site(
     o: int = Query(default=0, ge=0),
 ) -> Sequence[Token]:
     if not current_user.is_admin and site_id not in (user_sites or {}):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Site not found"
+        )
+
+    stmt = select(func.count()).select_from(Site).where(Site.id == site_id)
+    if (await session.exec(stmt)).one() == 0:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Site not found"
         )

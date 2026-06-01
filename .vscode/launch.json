@@ -1,11 +1,11 @@
 {
-    // IntelliSense を使用して利用可能な属性を学べます。
-    // 既存の属性の説明をホバーして表示します。
-    // 詳細情報は次を確認してください: https://go.microsoft.com/fwlink/?linkid=830387
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python デバッガー: FastAPI - API",
+            "name": "Python Debugger: FastAPI - API",
             "type": "debugpy",
             "request": "launch",
             "module": "uvicorn",
@@ -18,7 +18,7 @@
             "jinja": true
         },
         {
-            "name": "Python デバッガー: FastAPI - site",
+            "name": "Python Debugger: FastAPI - site",
             "type": "debugpy",
             "request": "launch",
             "module": "uvicorn",
@@ -29,6 +29,29 @@
                 "--reload"
             ],
             "jinja": true
+        },
+        {
+            "name": "Playwright: E2E (localhost:8000)",
+            "type": "node",
+            "request": "launch",
+            "runtimeExecutable": "npx",
+            "runtimeArgs": ["playwright", "test"],
+            "cwd": "${workspaceFolder}/e2e-tests",
+            "env": {
+                "BASE_URL": "http://localhost:8000"
+            },
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen"
+        }
+    ],
+    "compounds": [
+        {
+            "name": "FastAPI + E2E (Test)",
+            "configurations": [
+                "Python Debugger: FastAPI - API",
+                "Playwright: E2E (localhost:8000)"
+            ],
+            "stopAll": true
         }
     ]
 }

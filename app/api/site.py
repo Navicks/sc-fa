@@ -3,15 +3,16 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 from fastapi.exceptions import HTTPException
 from sqlalchemy.exc import NoResultFound
-from sqlmodel import select
+from sqlmodel import func, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette import status
 
 from app.database import get_async_session
 from app.deps import auth
 from app.models.site import Site, SiteCreate, SiteRead, SiteUpdate
+from app.models.token import Token
 from app.models.user import User
-from app.models.user_site import SitePermission
+from app.models.user_site import SitePermission, UserSite
 
 router = APIRouter(
     prefix="/sites",
@@ -140,3 +141,48 @@ async def update_site(
     await session.flush()
     await session.refresh(site)
     return site
+
+
+@router.delete(
+    "/{site_id}/",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(auth.is_access_token)],
+    summary="Delete Site",
+    description="Delete a site by its ID",
+    responses={status.HTTP_404_NOT_FOUND: {"description": "Site not found"}},
+)
+async def delete_site(
+    site_id: int,
+    current_user: Annotated[User, Depends(auth.get_current_user)],
+    user_sites: Annotated[
+        dict[int, SitePermission] | None, Depends(auth.get_current_user_site)
+    ],
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+) -> None:
+    site = await read_site_by_id(site_id, current_user, user_sites, session)
+    if not current_user.is_admin and (
+        user_sites is None or user_sites[site_id] < SitePermission.ADMIN
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions"
+        )
+    if not site:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Site not found"
+        )
+
+    stmt = select(func.count()).select_from(Token).where(Token.site_id == site_id)
+    if (await session.exec(stmt)).one() > 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cannot delete site with associated tokens",
+        )
+
+    stmt = select(func.count()).select_from(UserSite).where(UserSite.site_id == site_id)
+    if (await session.exec(stmt)).one() > 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cannot delete site with associated user permissions",
+        )
+
+    await session.delete(site)
