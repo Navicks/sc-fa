@@ -62,7 +62,7 @@ def update(
 def export(
     format: Annotated[
         export_model.ExportFormat, typer.Option("--format", "-f", help="Export format")
-    ] = export_model.ExportFormat.JSON,
+    ] = export_model.ExportFormat.NDJSON,
     path: Annotated[
         str | None,
         typer.Argument(help="Output file path")
@@ -80,7 +80,7 @@ def export(
 def import_sites(
     format: Annotated[
         import_model.ImportFormat, typer.Option("--format", "-f", help="Import format")
-    ] = import_model.ImportFormat.JSON,
+    ] = import_model.ImportFormat.NDJSON,
     path: Annotated[
         str | None,
         typer.Argument(help="Input file path")

@@ -166,7 +166,7 @@ def delete(email: str) -> None:
 def export(
     format: Annotated[
         export_model.ExportFormat, typer.Option("--format", "-f", help="Export format")
-    ] = export_model.ExportFormat.JSON,
+    ] = export_model.ExportFormat.NDJSON,
     path: Annotated[str | None, typer.Argument(help="Output file path")] = None,
 ) -> None:
     async def _export() -> None:
@@ -181,7 +181,7 @@ def export(
 def import_users(
     format: Annotated[
         import_model.ImportFormat, typer.Option("--format", "-f", help="Import format")
-    ] = import_model.ImportFormat.JSON,
+    ] = import_model.ImportFormat.NDJSON,
     path: Annotated[str | None, typer.Argument(help="Input file path")] = None,
 ) -> None:
     async def _import() -> None:

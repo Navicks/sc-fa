@@ -1,10 +1,10 @@
 import csv
 import enum
-import io
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from typing import Any, Generic, TypeVar, cast
 
+from aiocsv import AsyncDictReader
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.functions import file
@@ -13,14 +13,34 @@ from app.models.base import TableBase
 TModel = TypeVar("TModel", bound=TableBase)
 
 
+class ImportError(Exception):
+    pass
+
+
 class Importer(ABC, Generic[TModel]):
     _f: file.AioTextFile
     _model_class: type[TModel]
+    _static_fields: dict[str, Any] | None
 
-    def __init__(self, f: file.AioTextFile, model_class: type[TModel]) -> None:
+    def __init__(
+        self,
+        f: file.AioTextFile,
+        model_class: type[TModel],
+        static_fields: dict[str, Any] | None = None,
+    ) -> None:
         super().__init__()
         self._f = f
         self._model_class = model_class
+        self._static_fields = static_fields
+
+    def _load_model(self, row: dict[str, Any]) -> TModel:
+        row = self._model_class.hook_import(row) | (self._static_fields or {})
+        return self._model_class.model_validate(row)
+
+    def _validate_header(self, header: list[str]) -> None:
+        unacceptable: set[str] = set(header) - self._model_class.get_importable_fields()
+        if len(unacceptable) > 0:
+            raise ImportError(f"Invalid field name: {unacceptable}")
 
     @abstractmethod
     def import_data(self) -> AsyncIterator[TModel]:
@@ -33,9 +53,7 @@ class JSONImporter(Importer[TModel]):
 
         data = json.loads(await self._f.read())
         for row in data:
-            yield self._model_class.model_validate(
-                self._model_class.load_from_dict(cast(dict[str, Any], row))
-            )
+            yield super()._load_model(row)
 
 
 class NDJSONImporter(Importer[TModel]):
@@ -47,35 +65,55 @@ class NDJSONImporter(Importer[TModel]):
             if not line:
                 break
             row = json.loads(line)
-            yield self._model_class.model_validate(
-                self._model_class.load_from_dict(cast(dict[str, Any], row))
-            )
+            yield super()._load_model(row)
 
 
-class CSVImporter(Importer[TModel]):
+class CSVImporterBase(Importer[TModel], ABC):
+    _reader: AsyncDictReader
+
     async def import_data(self) -> AsyncIterator[TModel]:
-        content = await self._f.read()
-        reader = csv.reader(io.StringIO(content))
-        for row in reader:
-            yield self._model_class.model_validate(
-                self._model_class.load_from_list(row)
-            )
+        async for row in self._reader:
+            row = {k: None if v == "" else v for k, v in row}
+            yield super()._load_model(row)
+
+
+class CSVImporter(CSVImporterBase):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._reader = AsyncDictReader(
+            self._f,
+            quoting=csv.QUOTE_NONNUMERIC,
+            skipinitialspace=True,
+        )
+        super()._validate_header(self._reader.fieldnames or [])
+
+
+class CSVWithoutHeaderImporter(CSVImporterBase):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._reader = AsyncDictReader(
+            self._f,
+            skipinitialspace=True,
+            fieldnames=self._model_class.get_default_import_fields()
+        )
 
 
 class TSVImporter(Importer[TModel]):
-    async def import_data(self) -> AsyncIterator[TModel]:
-        content = await self._f.read()
-        reader = csv.reader(io.StringIO(content), delimiter="\t")
-        for row in reader:
-            yield self._model_class.model_validate(
-                self._model_class.load_from_list(row)
-            )
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._reader = AsyncDictReader(
+            self._f,
+            delimiter="\t",
+            skipinitialspace=True
+        )
+        super()._validate_header(self._reader.fieldnames or [])
 
 
 class ImportFormat(enum.Enum):
     JSON = "json"
     NDJSON = "ndjson"
     CSV = "csv"
+    CSVWOH = "csv-woh"
     TSV = "tsv"
 
 
@@ -84,6 +122,7 @@ def resolve_importer(fmt: ImportFormat) -> type[Importer[Any]]:
         ImportFormat.JSON: JSONImporter,
         ImportFormat.NDJSON: NDJSONImporter,
         ImportFormat.CSV: CSVImporter,
+        ImportFormat.CSVWOH: CSVWithoutHeaderImporter,
         ImportFormat.TSV: TSVImporter,
     }
     return mapping[fmt]
@@ -94,10 +133,11 @@ async def import_models(
     model_class: type[TModel],
     path: str | None,
     fmt: ImportFormat,
+    static_fields: dict[str, Any] | None = None,
 ) -> None:
     importer_cls = cast(type[Importer[TModel]], resolve_importer(fmt))
     f = await file.open_input_file(path)
-    im = importer_cls(f, model_class)
+    im = importer_cls(f, model_class, static_fields)
     async for model in im.import_data():
         session.add(model)
     await session.commit()

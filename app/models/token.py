@@ -66,6 +66,14 @@ class TokenBase(SQLModel, ABC):
     valid_from: datetime | None = Field(default=None, sa_type=UtcDateTime)
     valid_to: datetime | None = Field(default=None, sa_type=UtcDateTime)
 
+    __import_order__ = [
+        "redirect_uri",
+        "subject",
+        "status_code",
+        "valid_from",
+        "valid_to",
+        "token",
+    ]
     __table_args__ = (UniqueConstraint("site_id", "token", name="uix_site_id_token"),)
 
     @field_validator("valid_from", "valid_to", mode="after")

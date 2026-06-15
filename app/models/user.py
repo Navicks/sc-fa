@@ -28,19 +28,20 @@ class UserBase(SQLModel, ABC):
 
 class User(UserBase, TableBase, table=True):
     __tablename__: ClassVar[str] = "sc_user"  # type: ignore[assignment]
-    __exclude__export__ = {"hashed_password"}
-    __import_order__ = ["email", "display_name", "disabled", "is_admin", "password"]
+    __exclude_export__ = {"hashed_password"}
+    __exclude_import__ = {"hashed_password"}
+    __import_default_order__ = [
+        "email",
+        "display_name",
+        "disabled",
+        "is_admin",
+        "password",
+    ]
 
     hashed_password: str
 
     @classmethod
-    def load_from_list(cls, row: list[str]) -> dict[str, Any]:
-        r = super().load_from_list(row)
-        r["hashed_password"] = _get_password_hash(r.pop("password"))
-        return r
-
-    @classmethod
-    def load_from_dict(cls, row: dict[str, Any]) -> dict[str, Any]:
+    def hook_import(cls, row: dict[str, Any]) -> dict[str, Any]:
         row["hashed_password"] = _get_password_hash(row.pop("password"))
         return row
 

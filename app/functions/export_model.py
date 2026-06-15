@@ -5,10 +5,10 @@ from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from typing import Any, Generic, Sequence, TypeVar, cast
 
-import aiocsv
+from aiocsv import AsyncWriter
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
-from sqlmodel.sql.expression import SelectOfScalar
+from sqlmodel.sql.expression import Select, SelectOfScalar
 
 from app.functions import file
 from app.models.base import TableBase
@@ -47,7 +47,11 @@ class JSONExporter(Exporter[TModel]):
         for row in chunk:
             if not self.first:
                 await self._f.write(",\n")
-            row_json = row.model_dump_json(ensure_ascii=True, indent=4)
+            row_json = row.model_dump_json(
+                exclude=self._model_class.get_exclude_export_fields(),
+                ensure_ascii=True,
+                indent=4,
+            )
             await self._f.write(textwrap.indent(row_json, "    "))
             self.first = False
 
@@ -58,21 +62,36 @@ class JSONExporter(Exporter[TModel]):
 class NDJSONExporter(Exporter[TModel]):
     async def export_data(self, chunk: Sequence[TModel]) -> None:
         for row in chunk:
-            await self._f.write(row.model_dump_json() + "\n")
+            await self._f.write(
+                row.model_dump_json(
+                    exclude=self._model_class.get_exclude_export_fields()
+                )
+                + "\n"
+            )
 
 
 class CSVExporter(Exporter[TModel]):
+    def __init__(self, f: file.AioTextFile, model_class: type[TModel]) -> None:
+        super().__init__(f, model_class)
+        self._writer = AsyncWriter(f, quoting=csv.QUOTE_NONNUMERIC)
+
+    async def header(self) -> None:
+        await self._writer.writerow(self._model_class.dump_header())
+
     async def export_data(self, chunk: Sequence[TModel]) -> None:
-        writer = aiocsv.AsyncWriter(self._f, quoting=csv.QUOTE_NONNUMERIC)
-        await writer.writerow(self._model_class.dump_header())
-        await writer.writerows([row.dump_list() for row in chunk])
+        await self._writer.writerows([row.dump_list() for row in chunk])
 
 
 class TSVExporter(Exporter[TModel]):
+    def __init__(self, f: file.AioTextFile, model_class: type[TModel]) -> None:
+        super().__init__(f, model_class)
+        self._writer = AsyncWriter(f, delimiter="\t", quoting=csv.QUOTE_MINIMAL)
+
+    async def header(self) -> None:
+        await self._writer.writerow(self._model_class.dump_header())
+
     async def export_data(self, chunk: Sequence[TModel]) -> None:
-        writer = aiocsv.AsyncWriter(self._f, delimiter="\t", quoting=csv.QUOTE_MINIMAL)
-        await writer.writerow(self._model_class.dump_header())
-        await writer.writerows([row.dump_list() for row in chunk])
+        await self._writer.writerows([row.dump_list() for row in chunk])
 
 
 class ExportFormat(enum.Enum):
@@ -94,7 +113,7 @@ def resolve_exporter(fmt: ExportFormat) -> type[Exporter[Any]]:
 
 async def _iter_chunks(
     session: AsyncSession,
-    stmt: SelectOfScalar[TModel],
+    stmt: Select[TModel] | SelectOfScalar[TModel],
     model_class: type[TModel],
     chunk_size: int,
 ) -> AsyncIterator[Sequence[TModel]]:
@@ -118,6 +137,7 @@ async def export_models(
     path: str | None,
     fmt: ExportFormat,
     chunk_size: int = 1000,
+    stmt: Select[TModel] | SelectOfScalar[TModel] | None = None,
 ) -> None:
     exporter_cls = cast(type[Exporter[TModel]], resolve_exporter(fmt))
     f = await file.open_output_file(path)
@@ -125,7 +145,7 @@ async def export_models(
     await ex.header()
     async for chunk in _iter_chunks(
         session,
-        select(model_class),
+        select(model_class) if stmt is None else stmt,
         model_class,
         chunk_size,
     ):

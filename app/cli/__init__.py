@@ -2,12 +2,13 @@
 
 import typer
 
-from app.cli import site, user
+from app.cli import site, token, user
 
 app = typer.Typer()
 
 app.add_typer(user.app, name="user", help="User management commands")
 app.add_typer(site.app, name="site", help="Site management commands")
+app.add_typer(token.app, name="token", help="Token management commands")
 
 
 @app.command()
